@@ -1,0 +1,219 @@
+/* layout.css — nav, banner, grid, page structure */
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+/* --- Top nav --- */
+
+.site-nav {
+  background: var(--bb-primary);
+  color: #fff;
+}
+
+.site-nav .container {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  min-height: 64px;
+}
+
+.site-nav .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.site-nav .brand img,
+.site-nav .brand svg {
+  height: 28px;
+  width: auto;
+  display: block;
+}
+
+.site-nav .brand-text {
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.site-nav .tagline {
+  display: none;
+}
+
+.site-nav nav {
+  margin-left: auto;
+  display: flex;
+  gap: 1.25rem;
+}
+
+.site-nav nav a {
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.95rem;
+  opacity: 0.85;
+  border-bottom: 2px solid transparent;
+  padding-bottom: 2px;
+}
+
+.site-nav nav a:hover,
+.site-nav nav a[aria-current='page'] {
+  opacity: 1;
+  border-bottom-color: var(--bb-accent);
+}
+
+@media (min-width: 700px) {
+  .site-nav .tagline {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 400;
+    opacity: 0.75;
+  }
+}
+
+/* --- Safety banner --- */
+
+.safety-banner {
+  background: var(--bb-warn-bg);
+  border-left: 3px solid var(--bb-warn-ln);
+  color: var(--bb-ink);
+}
+
+.safety-banner .container {
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.safety-banner strong.lead {
+  color: var(--bb-warn-ln);
+}
+
+/* --- Page body --- */
+
+main {
+  padding: 2rem 0 3rem;
+}
+
+.page-header {
+  margin-bottom: 1.5rem;
+}
+
+.page-header .tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--bb-primary);
+  background: #fff;
+  border: 1px solid var(--bb-line);
+  border-radius: var(--bb-radius);
+  padding: 0.15em 0.5em;
+  margin-bottom: 0.5rem;
+}
+
+/* --- Landing page catalogue --- */
+
+.catalogue-group {
+  margin-bottom: 2rem;
+}
+
+.catalogue-group h2 {
+  border-bottom: 1px solid var(--bb-line);
+  padding-bottom: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.calc-card {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--bb-line);
+  border-radius: var(--bb-radius);
+  padding: 1rem 1.1rem;
+  text-decoration: none;
+  color: var(--bb-ink);
+}
+
+.calc-card:hover {
+  border-color: var(--bb-primary);
+}
+
+.calc-card h3 {
+  margin-bottom: 0.3rem;
+}
+
+.calc-card p {
+  color: var(--bb-muted);
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+  flex: 1;
+}
+
+.calc-card .open-link {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--bb-primary);
+}
+
+/* --- Calc page two-column layout --- */
+
+.calc-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+}
+
+@media (min-width: 900px) {
+  .calc-layout {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    align-items: start;
+  }
+  .calc-col-results {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+.calc-col-results {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.report-section {
+  margin-top: 2.5rem;
+}
+
+.report-frame {
+  background: #fff;
+  border: 1px solid var(--bb-line);
+}
+
+/* --- Footer --- */
+
+.site-footer {
+  border-top: 1px solid var(--bb-line);
+  padding: 1.5rem 0;
+  font-size: 0.85rem;
+  color: var(--bb-muted);
+}
+
+.site-footer .container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  justify-content: space-between;
+}

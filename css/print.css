@@ -1,0 +1,259 @@
+/* print.css — printable calc sheet (@media print) and the on-screen preview
+   that mirrors it exactly (.report-sheet is shared markup for both). */
+
+.report-sheet {
+  font-family: var(--bb-font);
+  color: #000;
+  background: #fff;
+  font-size: 10pt;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-sheet .rs-border {
+  border: 0.5pt solid #000;
+}
+
+.report-sheet table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.report-sheet .rs-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 0.5pt solid #000;
+}
+
+.report-sheet .rs-head > div {
+  padding: 6pt 8pt;
+}
+
+.report-sheet .rs-head-left {
+  border-right: 0.5pt solid #000;
+  display: flex;
+  align-items: center;
+  gap: 8pt;
+}
+
+.report-sheet .rs-head-left img,
+.report-sheet .rs-head-left svg {
+  height: 22pt;
+  width: auto;
+}
+
+.report-sheet .rs-head-left .rs-company {
+  font-size: 12pt;
+  font-weight: 700;
+}
+
+.report-sheet .rs-head-left .rs-sub {
+  font-size: 8pt;
+  color: #333;
+}
+
+.report-sheet .rs-meta-table td {
+  border: none;
+  padding: 1pt 0;
+  font-size: 9pt;
+}
+
+.report-sheet .rs-meta-table td.rs-meta-label {
+  color: #333;
+  width: 40%;
+}
+
+.report-sheet .rs-meta-table td.rs-meta-fill {
+  border-bottom: 0.5pt solid #000;
+}
+
+.report-sheet .rs-calc-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 0.5pt solid #000;
+}
+
+.report-sheet .rs-calc-meta > div {
+  padding: 6pt 8pt;
+}
+
+.report-sheet .rs-calc-meta > div:first-child {
+  border-right: 0.5pt solid #000;
+}
+
+.report-sheet .rs-calc-title {
+  font-size: 12pt;
+  font-weight: 700;
+  margin-bottom: 2pt;
+}
+
+.report-sheet .rs-body {
+  padding: 8pt 10pt;
+}
+
+.report-sheet h4.rs-section-title {
+  font-size: 10pt;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-bottom: 0.5pt solid #000;
+  margin: 0 0 4pt;
+  padding-bottom: 2pt;
+}
+
+.report-sheet section.rs-section {
+  margin-bottom: 10pt;
+}
+
+.report-sheet ul.rs-bullets {
+  margin: 0;
+  padding-left: 14pt;
+}
+
+.report-sheet ul.rs-bullets li {
+  margin-bottom: 2pt;
+}
+
+.report-sheet table.rs-input-table th,
+.report-sheet table.rs-input-table td {
+  border-bottom: 0.5pt solid #999;
+  padding: 2pt 4pt;
+  font-size: 9pt;
+  text-align: left;
+}
+
+.report-sheet table.rs-input-table td.num {
+  text-align: right;
+}
+
+.report-sheet .rs-step {
+  margin-bottom: 6pt;
+  page-break-inside: avoid;
+}
+
+.report-sheet .rs-step-title {
+  font-weight: 700;
+  font-size: 9.5pt;
+  margin-bottom: 1pt;
+}
+
+.report-sheet .rs-step-line {
+  display: grid;
+  grid-template-columns: 90pt 1fr;
+  font-size: 9pt;
+}
+
+.report-sheet .rs-step-line .rs-step-key {
+  color: #333;
+}
+
+.report-sheet .rs-results-box {
+  border: 0.75pt solid #000;
+  padding: 6pt 10pt;
+  page-break-inside: avoid;
+}
+
+.report-sheet .rs-results-box .result-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2pt 0;
+  font-size: 9.5pt;
+  border-bottom: 0.25pt solid #ccc;
+}
+
+.report-sheet .rs-results-box .result-row:last-child {
+  border-bottom: none;
+}
+
+.report-sheet .rs-results-box .result-row.highlight .result-value {
+  font-size: 12pt;
+  font-weight: 700;
+}
+
+.report-sheet .rs-verdict {
+  margin-top: 4pt;
+  font-weight: 700;
+  font-size: 9.5pt;
+}
+
+.report-sheet .rs-signoff {
+  border-top: 0.75pt solid #000;
+  padding: 8pt 10pt;
+}
+
+.report-sheet .rs-signoff-statement {
+  font-weight: 700;
+  font-size: 8.5pt;
+  text-align: center;
+  margin-bottom: 6pt;
+}
+
+.report-sheet .rs-signoff-row {
+  display: grid;
+  grid-template-columns: 60pt 1fr 40pt 1fr 40pt 1fr;
+  gap: 4pt;
+  align-items: end;
+  font-size: 9pt;
+  margin-bottom: 4pt;
+}
+
+.report-sheet .rs-signoff-row span.line {
+  border-bottom: 0.5pt solid #000;
+  display: inline-block;
+  height: 12pt;
+}
+
+.report-sheet .rs-footer {
+  border-top: 0.5pt solid #000;
+  padding: 4pt 10pt;
+  font-size: 8pt;
+  display: flex;
+  justify-content: space-between;
+  color: #333;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 15mm;
+  }
+
+  html, body {
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .site-nav, .safety-banner, .site-footer,
+  .calc-form, .results-panel, .btn-row, .info-block,
+  .toast {
+    display: none !important;
+  }
+
+  #report-root, #report-root * {
+    visibility: visible;
+  }
+
+  #report-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  .report-sheet {
+    font-size: 10pt;
+    line-height: 1.35;
+  }
+
+  .report-sheet .rs-step,
+  .report-sheet .rs-results-box {
+    page-break-inside: avoid;
+  }
+
+  a[href]::after {
+    content: '';
+  }
+}

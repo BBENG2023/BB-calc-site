@@ -1,0 +1,309 @@
+/* components.css — buttons, forms, tables, result cards */
+
+/* --- Buttons --- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--bb-font);
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0.5em 0.9em;
+  border-radius: var(--bb-radius);
+  border: 1px solid var(--bb-primary);
+  background: var(--bb-primary);
+  color: #fff;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.btn:hover {
+  background: #133a5c;
+}
+
+.btn.secondary {
+  background: #fff;
+  color: var(--bb-primary);
+}
+
+.btn.secondary:hover {
+  background: var(--bb-paper);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.print-icon {
+  width: 1em;
+  height: 1em;
+  display: inline-block;
+}
+
+/* --- Forms --- */
+
+.calc-form {
+  background: #fff;
+  border: 1px solid var(--bb-line);
+  border-radius: var(--bb-radius);
+  padding: 1.25rem;
+}
+
+.field {
+  margin-bottom: 1rem;
+}
+
+.field:last-child {
+  margin-bottom: 0;
+}
+
+.field label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 0.3em;
+}
+
+.field .field-unit {
+  font-weight: 400;
+  color: var(--bb-muted);
+}
+
+.field-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.field input[type="number"],
+.field input[type="text"],
+.field select {
+  width: 100%;
+  padding: 0.5em 0.6em;
+  border: 1px solid var(--bb-line);
+  border-radius: var(--bb-radius);
+  background: var(--bb-paper);
+  font-variant-numeric: tabular-nums;
+}
+
+.field input:focus,
+.field select:focus {
+  outline: 2px solid var(--bb-primary);
+  outline-offset: 1px;
+}
+
+.field .unit-suffix {
+  font-size: 0.85rem;
+  color: var(--bb-muted);
+  white-space: nowrap;
+}
+
+.field .field-help {
+  margin-top: 0.25em;
+  font-size: 0.78rem;
+  color: var(--bb-muted);
+}
+
+.field.invalid input,
+.field.invalid select {
+  border-color: var(--bb-err);
+}
+
+.field .field-error {
+  margin-top: 0.25em;
+  font-size: 0.78rem;
+  color: var(--bb-err);
+}
+
+fieldset {
+  border: 1px solid var(--bb-line);
+  border-radius: var(--bb-radius);
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem 1rem;
+}
+
+fieldset legend {
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0 0.4em;
+}
+
+/* --- Collapsible refs/assumptions --- */
+
+details.info-block {
+  background: #fff;
+  border: 1px solid var(--bb-line);
+  border-radius: var(--bb-radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+details.info-block summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+details.info-block ul {
+  margin: 0.75rem 0 0;
+}
+
+details.info-block li {
+  margin-bottom: 0.3em;
+  font-size: 0.9rem;
+}
+
+/* --- Results panel --- */
+
+.results-panel {
+  background: #fff;
+  border: 1px solid var(--bb-line);
+  border-radius: var(--bb-radius);
+  padding: 1.25rem;
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.4em 0;
+  border-bottom: 1px solid var(--bb-line);
+}
+
+.result-row:last-child {
+  border-bottom: none;
+}
+
+.result-row .result-label {
+  font-size: 0.88rem;
+  color: var(--bb-muted);
+}
+
+.result-row .result-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Scoped to .results-panel specifically (not .rs-results-box in the report
+   sheet) — the negative margin bleeds the highlight to the panel's own
+   edges, which would break out of the report's tighter results box. */
+.results-panel .result-row.highlight {
+  background: var(--bb-paper);
+  margin: 0 -1.25rem;
+  padding: 0.6em 1.25rem;
+  border-bottom: none;
+}
+
+.result-row.highlight .result-value {
+  font-size: 1.15rem;
+  color: var(--bb-primary);
+}
+
+.verdict-banner {
+  margin-top: 0.75rem;
+  padding: 0.6em 0.9em;
+  border-radius: var(--bb-radius);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.verdict-banner.pass {
+  background: #E7F3EC;
+  color: var(--bb-ok);
+  border: 1px solid var(--bb-ok);
+}
+
+.verdict-banner.fail {
+  background: #FBEAE7;
+  color: var(--bb-err);
+  border: 1px solid var(--bb-err);
+}
+
+.warnings-list {
+  margin-top: 0.75rem;
+  padding: 0.6em 0.9em;
+  background: var(--bb-warn-bg);
+  border: 1px solid var(--bb-warn-ln);
+  border-radius: var(--bb-radius);
+  font-size: 0.85rem;
+}
+
+.warnings-list ul {
+  margin: 0.4em 0 0;
+}
+
+/* --- Soil layers table (Schmertmann settlement) --- */
+
+.layers-table {
+  margin-bottom: 0.5rem;
+}
+
+.layers-table th {
+  font-size: 0.8rem;
+  color: var(--bb-muted);
+  font-weight: 700;
+}
+
+.layers-table td {
+  padding: 0.3em 0.4em;
+}
+
+.layers-table input[type="number"] {
+  width: 100%;
+  padding: 0.35em 0.4em;
+}
+
+.layers-table .btn {
+  padding: 0.2em 0.5em;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+/* --- Phase relations picker --- */
+
+.phase-picker-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.phase-output-table td.derived {
+  color: var(--bb-muted);
+}
+
+.phase-output-table td.given {
+  font-weight: 700;
+  color: var(--bb-primary);
+}
+
+/* --- Copy-link toast --- */
+
+.toast {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bb-primary);
+  color: #fff;
+  padding: 0.5em 1em;
+  border-radius: var(--bb-radius);
+  font-size: 0.85rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.toast.visible {
+  opacity: 1;
+}

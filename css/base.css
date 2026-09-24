@@ -1,0 +1,106 @@
+/* base.css — reset, design tokens, typography
+   Carlito is loaded via the Google Fonts <link> in each page's <head> (the
+   one sanctioned external call per the build brief) — see index.html etc.
+   The fallback stack below covers 'Calibri Light', which is metric-
+   identical to Carlito, if that link is ever unreachable. */
+
+:root {
+  --bb-primary: #0F2E47;
+  --bb-accent:  #C8A55B;
+  --bb-paper:   #F7F5F1;
+  --bb-ink:     #1A1A1A;
+  --bb-muted:   #6B6B6B;
+  --bb-line:    #D6D2CA;
+  --bb-warn-bg: #FFF4E1;
+  --bb-warn-ln: #C48A1A;
+  --bb-ok:      #2E7D5B;
+  --bb-err:     #B23A2E;
+
+  --bb-font: 'Carlito', 'Calibri Light', 'Calibri', 'Segoe UI', system-ui, sans-serif;
+  --bb-radius: 4px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  background: var(--bb-paper);
+  color: var(--bb-ink);
+  font-family: var(--bb-font);
+  font-weight: 400;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0 0 0.5em;
+  color: var(--bb-primary);
+}
+
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.3rem; }
+h3 { font-size: 1.05rem; }
+
+p {
+  margin: 0 0 1em;
+}
+
+a {
+  color: var(--bb-primary);
+  text-decoration-color: var(--bb-line);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  color: var(--bb-accent);
+}
+
+ul, ol {
+  margin: 0 0 1em;
+  padding-left: 1.25em;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.4em 0.6em;
+  border-bottom: 1px solid var(--bb-line);
+}
+
+td.num, th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+button, input, select {
+  font-family: inherit;
+  font-size: 1rem;
+  color: inherit;
+}
+
+small, .muted {
+  color: var(--bb-muted);
+  font-size: 0.85em;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

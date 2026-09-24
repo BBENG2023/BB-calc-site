@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Validation — Beaver Bridges Engineering Toolkit</title>
+  <meta name="robots" content="noindex" />
+  <link rel="icon" href="assets/favicon.ico" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+<body>
+  <main>
+    <div class="container">
+      <div class="page-header">
+        <h1>Validation samples</h1>
+        <p class="muted">
+          Hidden page, not linked from navigation. Runs every calc's <code>validation.samples</code>
+          against its own <code>calculate()</code>. Use this after changing any calculation logic.
+        </p>
+      </div>
+      <div id="validation-root"></div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { registry } from './js/registry.js';
+    import { runValidation } from './js/validate.js';
+    import { escapeHtml } from './js/formatters.js';
+
+    const root = document.getElementById('validation-root');
+    const rows = runValidation(registry);
+
+    rows.forEach((row) => {
+      const section = document.createElement('section');
+      section.style.marginBottom = '2rem';
+
+      if (row.noSamples) {
+        section.innerHTML = `<h2>${escapeHtml(row.calcTitle)} (${escapeHtml(row.calcId)})</h2>
+          <p class="verdict-banner fail">No validation samples defined.</p>`;
+        root.append(section);
+        return;
+      }
+
+      const allPass = row.checks.every((c) => c.pass) && !row.error;
+      section.innerHTML = `
+        <h2>${escapeHtml(row.calcTitle)} (${escapeHtml(row.calcId)})</h2>
+        <p><strong>${escapeHtml(row.sampleName)}</strong></p>
+        ${row.error ? `<p class="verdict-banner fail">Error: ${escapeHtml(row.error)}</p>` : ''}
+        <table>
+          <thead><tr><th>Symbol</th><th>Expected</th><th>Tolerance</th><th>Actual</th><th>Result</th></tr></thead>
+          <tbody>
+            ${row.checks.map((c) => `
+              <tr>
+                <td>${escapeHtml(c.symbol)}</td>
+                <td class="num">${c.expected} ${escapeHtml(c.unit || '')}</td>
+                <td class="num">± ${c.tol}</td>
+                <td class="num">${c.actual === undefined ? '—' : c.actual.toFixed(3)}</td>
+                <td>${c.pass ? '✅ pass' : '❌ FAIL'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        <p class="verdict-banner ${allPass ? 'pass' : 'fail'}">${allPass ? 'PASS' : 'FAIL'}</p>`;
+      root.append(section);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>About — Beaver Bridges Engineering Toolkit</title>
+  <link rel="icon" href="assets/favicon.ico" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,300;0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/print.css" />
+</head>
+<body>
+  <header class="site-nav">
+    <div class="container">
+      <a class="brand" href="index.html">
+        <img src="assets/logo.svg" alt="Beaver Bridges" />
+        <span class="brand-text">Beaver Bridges — Engineering Toolkit</span>
+      </a>
+      <span class="tagline">Preliminary engineering calculation tools</span>
+      <nav>
+        <a href="index.html">Catalogue</a>
+        <a href="about.html" aria-current="page">About</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="safety-banner">
+    <div class="container">
+      <strong class="lead">⚠ PRELIMINARY — FOR CONCEPT OPTIONEERING ONLY.</strong>
+      Every output from this toolkit is advisory and must be independently verified and signed off by a
+      Chartered Engineer (CEng MICE / MIStructE) before use in tender, fabrication, or construction. All
+      designs must be checked against the current Eurocodes with UK National Annexes and the applicable
+      DMRB / Network Rail / client-specific standards. CDM 2015 design responsibilities apply.
+    </div>
+  </div>
+
+  <main>
+    <div class="container">
+      <div class="page-header">
+        <h1>About this toolkit</h1>
+      </div>
+
+      <h2>Purpose</h2>
+      <p>
+        This site hosts a growing library of preliminary engineering calculation tools for the internal
+        engineering team at Beaver Bridges Ltd. It is built for concept optioneering — quick, consistent,
+        checkable calculations early in a scheme, not for final design.
+      </p>
+
+      <h2>Methodology and scope</h2>
+      <p>
+        Each calculation states its own references, assumptions, and scope directly on its page and on its
+        printed calculation sheet. All calculations use metric units and are based on UK design codes
+        (Eurocodes with UK National Annexes, DMRB, and Network Rail / client-specific standards where
+        relevant). Where a calculation uses a simplified method for preliminary purposes, this is stated
+        explicitly in its "Assumptions" panel.
+      </p>
+
+      <h2>Mandatory verification</h2>
+      <p>
+        Every output from this toolkit is advisory. Nothing produced here may be used for tender,
+        fabrication, or construction without independent verification and sign-off by a Chartered Engineer
+        (CEng MICE / MIStructE). CDM 2015 design responsibilities — including designing out hazards during
+        fabrication, erection, maintenance and demolition — remain with the responsible designer at every
+        stage, regardless of what this toolkit reports.
+      </p>
+
+      <h2>Validation</h2>
+      <p>
+        Every calculation ships with at least one validation sample — a known input/output pair used to
+        sanity-check the implementation. These run on a hidden <a href="test.html">validation page</a>,
+        intended for contributors checking a change to a calculation, not for day-to-day engineering use.
+      </p>
+
+      <h2>Contributing</h2>
+      <p>
+        To add a new calculation, see <code>CONTRIBUTING.md</code> in the repository. New calculations must
+        reference UK/EC design standards and include the CEng verification statement.
+      </p>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <span>Beaver Bridges Ltd — Engineering Toolkit · v1.0.0</span>
+      <span>Last updated 24 September 2026</span>
+      <span><a href="about.html">About</a></span>
+      <span>GitHub repo: fill in after creating the repository (see README)</span>
+      <span>Internal use only. Preliminary — requires CEng verification.</span>
+    </div>
+  </footer>
+</body>
+</html>
