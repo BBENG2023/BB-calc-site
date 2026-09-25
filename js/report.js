@@ -24,6 +24,12 @@ function inputDisplayValue(inputDef, value) {
   return String(value ?? '');
 }
 
+// Numbered section header, e.g. "2  INPUTS" with the numeral in accent
+// colour — see print.css h4.rs-section-title.
+function sectionTitle(n, label) {
+  return `<h4 class="rs-section-title"><span class="rs-section-num">${n}</span><span>${escapeHtml(label)}</span></h4>`;
+}
+
 /**
  * Build the report-sheet DOM for a calc.
  * @param {object} calc   the calc module definition
@@ -34,6 +40,7 @@ function inputDisplayValue(inputDef, value) {
  */
 export function buildReportSheet(calc, inputs, output, visibleInputNames) {
   const { results = [], steps = [], warnings = [], verdict } = output || {};
+  let sectionNum = 0;
 
   const sheet = el('div', 'report-sheet rs-border');
 
@@ -71,30 +78,24 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames) {
     </table>`;
   calcMeta.append(metaLeft, metaRight);
 
+  // --- Title strip ---
+  const titleBar = el('div', 'rs-title-bar', escapeHtml(calc.title));
+
   // --- Body ---
   const body = el('div', 'rs-body');
 
   if (calc.references && calc.references.length) {
     const sec = el('section', 'rs-section');
-    sec.innerHTML = `<h4 class="rs-section-title">References</h4>`;
+    sec.innerHTML = sectionTitle(++sectionNum, 'References & standards');
     const ul = el('ul', 'rs-bullets');
     calc.references.forEach((r) => ul.append(el('li', null, escapeHtml(r))));
     sec.append(ul);
     body.append(sec);
   }
 
-  if (calc.assumptions && calc.assumptions.length) {
-    const sec = el('section', 'rs-section');
-    sec.innerHTML = `<h4 class="rs-section-title">Assumptions</h4>`;
-    const ul = el('ul', 'rs-bullets');
-    calc.assumptions.forEach((a) => ul.append(el('li', null, escapeHtml(a))));
-    sec.append(ul);
-    body.append(sec);
-  }
-
   // Inputs table
   const inputSec = el('section', 'rs-section');
-  inputSec.innerHTML = `<h4 class="rs-section-title">Inputs</h4>`;
+  inputSec.innerHTML = sectionTitle(++sectionNum, 'Input parameters');
   const table = el('table', 'rs-input-table');
   table.innerHTML = `<thead><tr><th>Symbol</th><th>Description</th><th>Value</th><th>Unit</th></tr></thead>`;
   const tbody = el('tbody');
@@ -143,10 +144,39 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames) {
   inputSec.append(table);
   body.append(inputSec);
 
+  // Method & assumptions — two-column with the definition diagram when
+  // the calc provides one (see js/diagrams.js).
+  if ((calc.assumptions && calc.assumptions.length) || calc.diagram) {
+    const sec = el('section', 'rs-section');
+    sec.innerHTML = sectionTitle(++sectionNum, 'Method & assumptions');
+
+    const ul = el('ul', 'rs-bullets');
+    (calc.assumptions || []).forEach((a) => ul.append(el('li', null, escapeHtml(a))));
+
+    if (calc.diagram) {
+      const grid = el('div', 'rs-assump-grid');
+      grid.append(ul);
+      const diagramBox = el('div', 'rs-diagram-box');
+      let diagramSvg = '';
+      try {
+        diagramSvg = calc.diagram(inputs, output);
+      } catch (err) {
+        diagramSvg = '';
+      }
+      diagramBox.innerHTML = `<div class="rs-diagram-inner">${diagramSvg}</div>
+        <div class="rs-diagram-caption">Fig. 1 — Definition diagram (schematic, not to scale)</div>`;
+      grid.append(diagramBox);
+      sec.append(grid);
+    } else {
+      sec.append(ul);
+    }
+    body.append(sec);
+  }
+
   // Calculation steps
   if (steps.length) {
     const sec = el('section', 'rs-section');
-    sec.innerHTML = `<h4 class="rs-section-title">Calculation</h4>`;
+    sec.innerHTML = sectionTitle(++sectionNum, 'Calculation');
     steps.forEach((step, i) => {
       const stepEl = el('div', 'rs-step');
       stepEl.innerHTML = `
@@ -159,29 +189,46 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames) {
     body.append(sec);
   }
 
-  // Results summary
+  // Results summary — headline (highlighted) results as stat tiles,
+  // everything else as a plain row list underneath.
   const resSec = el('section', 'rs-section');
-  resSec.innerHTML = `<h4 class="rs-section-title">Results summary</h4>`;
-  const box = el('div', 'rs-results-box');
-  results.forEach((r) => {
-    const row = el('div', `result-row${r.highlight ? ' highlight' : ''}`);
-    row.innerHTML = `
-      <span class="result-label">${escapeHtml(r.label)}${r.symbol ? ` (${escapeHtml(r.symbol)})` : ''}</span>
-      <span class="result-value">${fmtUnit(r.value, r.unit, r.precision ?? 2)}</span>`;
-    box.append(row);
-  });
+  resSec.innerHTML = sectionTitle(++sectionNum, 'Results summary');
+  const highlighted = results.filter((r) => r.highlight);
+  const plain = results.filter((r) => !r.highlight);
+
+  if (highlighted.length) {
+    const grid = el('div', 'stat-grid');
+    highlighted.forEach((r) => {
+      const tile = el('div', 'stat-tile');
+      tile.innerHTML = `
+        <div class="stat-label">${escapeHtml(r.label)}${r.symbol ? ` (${escapeHtml(r.symbol)})` : ''}</div>
+        <div class="stat-value">${fmtUnit(r.value, r.unit, r.precision ?? 2)}</div>`;
+      grid.append(tile);
+    });
+    resSec.append(grid);
+  }
+  if (plain.length) {
+    const rows = el('div', 'rs-results-rows');
+    plain.forEach((r) => {
+      const row = el('div', 'result-row');
+      row.innerHTML = `
+        <span class="result-label">${escapeHtml(r.label)}${r.symbol ? ` (${escapeHtml(r.symbol)})` : ''}</span>
+        <span class="result-value">${fmtUnit(r.value, r.unit, r.precision ?? 2)}</span>`;
+      rows.append(row);
+    });
+    resSec.append(rows);
+  }
   if (verdict) {
     const v = el('div', 'rs-verdict');
     v.textContent = `${verdict.pass ? 'PASS' : 'FAIL'} — ${verdict.message}`;
-    box.append(v);
+    resSec.append(v);
   }
-  resSec.append(box);
   body.append(resSec);
 
   // Warnings
   if (warnings.length) {
     const sec = el('section', 'rs-section');
-    sec.innerHTML = `<h4 class="rs-section-title">Warnings / notes</h4>`;
+    sec.innerHTML = sectionTitle(++sectionNum, 'Warnings / notes');
     const ul = el('ul', 'rs-bullets');
     warnings.forEach((w) => ul.append(el('li', null, escapeHtml(w))));
     sec.append(ul);
@@ -190,12 +237,12 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames) {
 
   // Sign-off block
   const signoff = el('div', 'rs-signoff');
-  signoff.innerHTML = `
-    <div class="rs-signoff-statement">
-      PRELIMINARY — REQUIRES INDEPENDENT VERIFICATION AND SIGN-OFF BY A
-      CHARTERED ENGINEER (CEng MICE / MIStructE) PRIOR TO USE FOR
-      FABRICATION, CONSTRUCTION OR TENDER.
-    </div>
+  const signoffStatement = el('div', 'rs-signoff-statement');
+  signoffStatement.innerHTML = `<strong>PRELIMINARY — REQUIRES INDEPENDENT VERIFICATION AND SIGN-OFF</strong> BY A
+    CHARTERED ENGINEER (CEng MICE / MIStructE) PRIOR TO USE FOR
+    FABRICATION, CONSTRUCTION OR TENDER.`;
+  const signoffRows = el('div', 'rs-signoff-rows');
+  signoffRows.innerHTML = `
     <div class="rs-signoff-row">
       <span>Prepared</span><span class="line"></span>
       <span>Signed</span><span class="line"></span>
@@ -211,10 +258,11 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames) {
       <span>Signed</span><span class="line"></span>
       <span>Date</span><span class="line"></span>
     </div>`;
+  signoff.append(signoffStatement, signoffRows);
 
   const footer = el('div', 'rs-footer');
   footer.innerHTML = `<span>Beaver Bridges Ltd | Engineering Toolkit</span><span>Page 1/1</span>`;
 
-  sheet.append(head, calcMeta, body, signoff, footer);
+  sheet.append(head, calcMeta, titleBar, body, signoff, footer);
   return sheet;
 }

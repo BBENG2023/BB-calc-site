@@ -10,7 +10,88 @@
 // see solveEW) plus one w-domain quantity; solveEW() inverts algebraically
 // — no iteration is needed anywhere in this method.
 
+import { svg, rect, line, text, clamp } from '../js/diagrams.js';
+
 const GAMMA_W_DEFAULT = 9.81;
+
+// Classic two-column phase diagram: Volume (air / water / solids, stacked
+// proportionally, Vs = 1 as the reference) alongside Mass (water / solids
+// only — air is treated as massless). Dashed lines tie the two columns'
+// phase boundaries together.
+function diagram(v, output) {
+  const res = output?.results || [];
+  const get = (sym) => res.find((r) => r.symbol === sym)?.value;
+  const e = get('e');
+  if (e === undefined || !Number.isFinite(e)) return '';
+
+  const Gs = v.Gs || 2.65;
+  const gw = v.gammaw || GAMMA_W_DEFAULT;
+  const wPct = get('w');
+  const SPct = get('S');
+  const w = wPct !== undefined ? wPct / 100 : 0;
+  const S = SPct !== undefined ? clamp(SPct / 100, 0, 1) : 0;
+
+  const Vs = 1;
+  const Vv = e;
+  const Vw = clamp(S * e, 0, Vv);
+  const Va = Math.max(0, Vv - Vw);
+  const totalV = Vs + Vv;
+
+  const Ws = Gs * gw * Vs;
+  const Ww = w * Ws;
+
+  const pxPerVol = clamp(150 / totalV, 28, 130);
+  const topY = 26;
+  const vaH = Va * pxPerVol;
+  const vwH = Vw * pxPerVol;
+  const vsH = Vs * pxPerVol;
+
+  const volX = 60, volW = 90;
+  const massX = 240, massW = 90;
+  const massTotalH = vwH + vsH; // air is massless — mass column omits it
+  const massWH = massTotalH * (Ws + Ww > 0 ? Ww / (Ws + Ww) : 0);
+  const massSH = massTotalH - massWH;
+  const massTopY = topY + vaH;
+
+  function block(x, y, w2, h, fill, label, sub) {
+    if (h < 1) return '';
+    let out = rect(x, y, w2, h, { fill, stroke: 'var(--bb-ink)', width: 1 });
+    if (h > 16) {
+      out += text(x + w2 / 2, y + h / 2 + 3, label, { size: 10, weight: 800, color: 'var(--bb-ink)' });
+      if (sub && h > 30) out += text(x + w2 / 2, y + h / 2 + 16, sub, { size: 8, weight: 600, color: 'var(--bb-muted)' });
+    }
+    return out;
+  }
+
+  let inner = '';
+  inner += text(volX + volW / 2, topY - 10, 'VOLUME', { size: 8, weight: 800, color: 'var(--bb-primary-500)', ls: '0.08em' });
+  inner += text(massX + massW / 2, topY - 10, 'MASS', { size: 8, weight: 800, color: 'var(--bb-primary-500)', ls: '0.08em' });
+
+  inner += block(volX, topY, volW, vaH, 'var(--bb-surface)', 'Air', `Va=${Va.toFixed(2)}`);
+  inner += block(volX, topY + vaH, volW, vwH, 'var(--bb-primary-200)', 'Water', `Vw=${Vw.toFixed(2)}`);
+  inner += block(volX, topY + vaH + vwH, volW, vsH, 'var(--bb-primary-400)', 'Solids', `Vs=${Vs.toFixed(2)}`);
+
+  if (Ws + Ww > 0) {
+    inner += block(massX, massTopY, massW, massWH, 'var(--bb-primary-200)', 'Water', `Ww=${Ww.toFixed(2)}`);
+    inner += block(massX, massTopY + massWH, massW, massSH, 'var(--bb-primary-400)', 'Solids', `Ws=${Ws.toFixed(2)}`);
+    // Only annotate "air is massless" when there's an air block above to
+    // annotate — with no air block (S = 100%) the mass column already
+    // starts flush at the top, so the note has nothing to point at.
+    if (vaH > 4) inner += text(massX + massW / 2, massTopY - 8, 'Ma ≈ 0', { size: 7.5, weight: 700, color: 'var(--bb-muted)' });
+  }
+
+  // Boundary tie-lines between the two columns
+  inner += line(volX + volW, massTopY, massX, massTopY, { color: 'var(--bb-muted)', width: 0.75, dash: '2 3' });
+  inner += line(volX + volW, massTopY + vwH, massX, massTopY + massWH, { color: 'var(--bb-muted)', width: 0.75, dash: '2 3' });
+  inner += line(volX + volW, topY + vaH + vwH + vsH, massX, massTopY + massTotalH, { color: 'var(--bb-muted)', width: 0.75, dash: '2 3' });
+
+  // e / n / S annotations to the right of the volume column
+  const bracketX = volX + volW + 14;
+  inner += line(bracketX, topY, bracketX, topY + vaH + vwH, { color: 'var(--bb-accent)', width: 1.2 });
+  inner += text(bracketX + 6, topY + (vaH + vwH) / 2 + 3, `Vv (e = ${e.toFixed(2)})`, { size: 8, weight: 700, color: 'var(--bb-accent-700)', anchor: 'start' });
+
+  return svg('0 0 400 260', inner);
+}
 
 function eFromEDomain(key, val, Gs, gw) {
   switch (key) {
@@ -96,6 +177,7 @@ export default {
   id: 'phase-relations',
   title: 'Soil Phase Relations Calculator',
   category: 'Geotechnical — Soil mechanics',
+  tag: 'Phase diagram',
   version: '1.0.0',
   references: [
     'Craig, R.F., Craig\'s Soil Mechanics, 8th ed. — phase relationships',
@@ -114,6 +196,7 @@ export default {
       fields: FIELD_META,
       default: { pick1: 'e', value1: 0.9, pick2: 'S', value2: 100 } },
   ],
+  diagram,
   calculate: (v) => {
     const results = [];
     const steps = [];

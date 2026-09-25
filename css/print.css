@@ -1,5 +1,9 @@
 /* print.css — printable calc sheet (@media print) and the on-screen preview
-   that mirrors it exactly (.report-sheet is shared markup for both). */
+   that mirrors it exactly (.report-sheet is shared markup for both).
+   Formal, bordered "engineering calculation sheet" styling: numbered
+   section headers, a metadata grid, and stat tiles for the headline
+   result(s) (reusing the same .stat-grid/.stat-tile classes as the live
+   results panel in components.css, at print point-sizes here). */
 
 .report-sheet {
   font-family: var(--bb-font);
@@ -11,7 +15,7 @@
 }
 
 .report-sheet .rs-border {
-  border: 0.5pt solid #000;
+  border: 0.5pt solid var(--bb-primary);
 }
 
 .report-sheet table {
@@ -22,7 +26,7 @@
 .report-sheet .rs-head {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border-bottom: 0.5pt solid #000;
+  border-bottom: 0.5pt solid var(--bb-primary);
 }
 
 .report-sheet .rs-head > div {
@@ -30,7 +34,7 @@
 }
 
 .report-sheet .rs-head-left {
-  border-right: 0.5pt solid #000;
+  border-right: 0.5pt solid var(--bb-primary);
   display: flex;
   align-items: center;
   gap: 8pt;
@@ -44,22 +48,28 @@
 
 .report-sheet .rs-head-left .rs-company {
   font-size: 12pt;
-  font-weight: 700;
+  font-weight: 800;
+  color: var(--bb-primary);
 }
 
 .report-sheet .rs-head-left .rs-sub {
-  font-size: 8pt;
-  color: #333;
+  font-size: 7.5pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bb-primary-500);
 }
 
 .report-sheet .rs-meta-table td {
   border: none;
   padding: 1pt 0;
-  font-size: 9pt;
+  font-size: 8.5pt;
 }
 
 .report-sheet .rs-meta-table td.rs-meta-label {
-  color: #333;
+  color: var(--bb-primary-500);
+  font-size: 6.5pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   width: 40%;
 }
 
@@ -70,7 +80,7 @@
 .report-sheet .rs-calc-meta {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border-bottom: 0.5pt solid #000;
+  border-bottom: 0.5pt solid var(--bb-primary);
 }
 
 .report-sheet .rs-calc-meta > div {
@@ -78,27 +88,47 @@
 }
 
 .report-sheet .rs-calc-meta > div:first-child {
-  border-right: 0.5pt solid #000;
+  border-right: 0.5pt solid var(--bb-primary);
 }
 
 .report-sheet .rs-calc-title {
   font-size: 12pt;
-  font-weight: 700;
+  font-weight: 800;
   margin-bottom: 2pt;
 }
 
+/* Full-width navy title strip, between the metadata grid and the body —
+   purely decorative repetition of the title already in rs-calc-meta, but
+   it's what makes the sheet read as a formal document at a glance. */
+.report-sheet .rs-title-bar {
+  background: var(--bb-primary);
+  color: #fff;
+  padding: 7pt 12pt;
+  font-weight: 800;
+  font-size: 11pt;
+  letter-spacing: -0.01em;
+}
+
 .report-sheet .rs-body {
-  padding: 8pt 10pt;
+  padding: 10pt 12pt 14pt;
 }
 
 .report-sheet h4.rs-section-title {
-  font-size: 10pt;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  display: flex;
+  align-items: baseline;
+  gap: 8pt;
+  font-size: 9.5pt;
+  font-weight: 800;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  border-bottom: 0.5pt solid #000;
-  margin: 0 0 4pt;
-  padding-bottom: 2pt;
+  border-bottom: 1pt solid var(--bb-primary);
+  margin: 2pt 0 5pt;
+  padding-bottom: 3pt;
+}
+
+.report-sheet h4.rs-section-title .rs-section-num {
+  color: var(--bb-accent);
+  font-size: 9.5pt;
 }
 
 .report-sheet section.rs-section {
@@ -114,12 +144,44 @@
   margin-bottom: 2pt;
 }
 
+.report-sheet .rs-assump-grid {
+  display: grid;
+  grid-template-columns: 1fr 190pt;
+  gap: 10pt;
+  align-items: start;
+}
+
+.report-sheet .rs-diagram-box {
+  border: 0.5pt solid var(--bb-line);
+  background: #fff;
+  page-break-inside: avoid;
+}
+
+.report-sheet .rs-diagram-inner {
+  height: 150pt;
+}
+
+.report-sheet .rs-diagram-caption {
+  font-size: 7pt;
+  text-align: center;
+  color: var(--bb-primary-500);
+  padding: 2pt 0 4pt;
+}
+
 .report-sheet table.rs-input-table th,
 .report-sheet table.rs-input-table td {
   border-bottom: 0.5pt solid #999;
   padding: 2pt 4pt;
   font-size: 9pt;
   text-align: left;
+}
+
+.report-sheet table.rs-input-table th {
+  font-size: 7pt;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bb-primary-500);
+  font-weight: 700;
 }
 
 .report-sheet table.rs-input-table td.num {
@@ -147,27 +209,48 @@
   color: #333;
 }
 
-.report-sheet .rs-results-box {
-  border: 0.75pt solid #000;
-  padding: 6pt 10pt;
+/* --- Print-scale overrides of the shared .stat-grid/.stat-tile component --- */
+
+.report-sheet .stat-grid {
+  gap: 1.5pt;
+  border: 1pt solid var(--bb-primary);
+  margin-bottom: 6pt;
   page-break-inside: avoid;
 }
 
-.report-sheet .rs-results-box .result-row {
+.report-sheet .stat-tile {
+  padding: 7pt 10pt;
+}
+
+.report-sheet .stat-tile .stat-label {
+  font-size: 6.5pt;
+}
+
+.report-sheet .stat-tile .stat-value {
+  font-size: 17pt;
+}
+
+.report-sheet .stat-tile .stat-unit {
+  font-size: 8pt;
+}
+
+/* Non-highlighted results still list as plain rows below the stat tiles. */
+.report-sheet .rs-results-rows {
+  border: 0.5pt solid #999;
+  padding: 2pt 8pt;
+  page-break-inside: avoid;
+}
+
+.report-sheet .rs-results-rows .result-row {
   display: flex;
   justify-content: space-between;
   padding: 2pt 0;
-  font-size: 9.5pt;
+  font-size: 9pt;
   border-bottom: 0.25pt solid #ccc;
 }
 
-.report-sheet .rs-results-box .result-row:last-child {
+.report-sheet .rs-results-rows .result-row:last-child {
   border-bottom: none;
-}
-
-.report-sheet .rs-results-box .result-row.highlight .result-value {
-  font-size: 12pt;
-  font-weight: 700;
 }
 
 .report-sheet .rs-verdict {
@@ -177,15 +260,26 @@
 }
 
 .report-sheet .rs-signoff {
-  border-top: 0.75pt solid #000;
-  padding: 8pt 10pt;
+  border-top: 1pt solid var(--bb-primary);
 }
 
 .report-sheet .rs-signoff-statement {
+  background: var(--bb-warn-bg);
+  color: #4a3a12;
   font-weight: 700;
   font-size: 8.5pt;
-  text-align: center;
-  margin-bottom: 6pt;
+  padding: 6pt 12pt;
+  margin: 0;
+  border-top: 0.75pt solid var(--bb-warn-ln);
+  border-bottom: 0.75pt solid var(--bb-warn-ln);
+}
+
+.report-sheet .rs-signoff-statement strong {
+  color: var(--bb-warn-ln);
+}
+
+.report-sheet .rs-signoff-rows {
+  padding: 8pt 12pt;
 }
 
 .report-sheet .rs-signoff-row {
@@ -204,12 +298,12 @@
 }
 
 .report-sheet .rs-footer {
-  border-top: 0.5pt solid #000;
-  padding: 4pt 10pt;
-  font-size: 8pt;
+  border-top: 1pt solid var(--bb-primary);
+  padding: 4pt 12pt;
+  font-size: 7.5pt;
   display: flex;
   justify-content: space-between;
-  color: #333;
+  color: var(--bb-primary-500);
 }
 
 @media print {
@@ -226,9 +320,9 @@
     visibility: hidden;
   }
 
-  .site-nav, .safety-banner, .site-footer,
+  .site-nav, .safety-banner, .site-footer, .hero,
   .calc-form, .results-panel, .btn-row, .info-block,
-  .toast {
+  .toast, .breadcrumb {
     display: none !important;
   }
 
@@ -249,7 +343,8 @@
   }
 
   .report-sheet .rs-step,
-  .report-sheet .rs-results-box {
+  .report-sheet .stat-grid,
+  .report-sheet .rs-results-rows {
     page-break-inside: avoid;
   }
 

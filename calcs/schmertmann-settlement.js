@@ -2,7 +2,38 @@
 // for shallow foundations on granular soil (Schmertmann et al. 1978).
 // Layer depths are measured from founding level (not from ground level).
 
+import { svg, soilHatchDef, line, rect, text, clamp } from '../js/diagrams.js';
+
 const GAMMA_W = 9.81; // kN/m3
+
+function effStress(D, gamma, Dw, z) {
+  const absDepth = D + z;
+  const submergedDepth = Math.max(0, absDepth - Math.max(Dw, 0));
+  return gamma * absDepth - GAMMA_W * submergedDepth;
+}
+
+// Shared between calculate() and diagram() so the two can never drift:
+// derives the strain-influence profile (Iz0, zp, zInfluence, Izp) and the
+// effective-stress terms it depends on.
+function computeProfile(v) {
+  const B = v.B;
+  const L = v.shape === 'Rectangular' ? v.L : B;
+  const D = v.D;
+  const gamma = v.gamma;
+  const Dw = v.Dw;
+
+  const sigmaV0 = effStress(D, gamma, Dw, 0);
+  const deltaQ = v.q - sigmaV0;
+  const aspect = L / B;
+  const axisymmetric = aspect <= 2;
+  const Iz0 = axisymmetric ? 0.1 : 0.2;
+  const zp = axisymmetric ? 0.5 * B : B;
+  const zInfluence = axisymmetric ? 2 * B : 4 * B;
+  const sigmaVp = effStress(D, gamma, Dw, zp);
+  const Izp = deltaQ > 0 ? 0.5 + 0.1 * Math.sqrt(deltaQ / sigmaVp) : 0;
+
+  return { B, D, sigmaV0, deltaQ, aspect, axisymmetric, Iz0, zp, zInfluence, sigmaVp, Izp };
+}
 
 function izAt(z, profile) {
   const { Iz0, zp, Izp, zInfluence } = profile;
@@ -28,10 +59,76 @@ function averageIz(z1, z2, profile) {
   return area / (hi - lo);
 }
 
+// Footing + layered soil profile on the left, the classic Iz-vs-depth
+// strain-influence triangle plotted alongside it on the right — the
+// standard textbook figure for this method (Schmertmann 1978, Fig. 1).
+function diagram(v) {
+  const B = v.B || 2;
+  const D = v.D || 1.5;
+  const layers = v.layers || [];
+  const profile = computeProfile(v);
+  const { Iz0, zp, Izp, zInfluence } = profile;
+
+  const drawDepth = Math.max(zInfluence, 0.1);
+  const kv = clamp(190 / (D + drawDepth), 8, 46);
+  const kh = clamp(140 / B, 12, 55);
+
+  const groundY = 18;
+  const foundingY = groundY + D * kv;
+  const bottomY = foundingY + drawDepth * kv;
+  const cx = 130;
+  const footW = clamp(B * kh, 40, 160);
+  const footTh = 12;
+
+  let inner = '';
+  // Embedment zone (above founding level)
+  inner += `<rect x="10" y="${groundY}" width="360" height="${foundingY - groundY}" style="fill:var(--bb-primary-100)" />`;
+  inner += `<rect x="10" y="${groundY}" width="360" height="${foundingY - groundY}" fill="url(#ss-hatch)" />`;
+  inner += line(10, groundY, 370, groundY, { color: 'var(--bb-primary)', width: 2 });
+  inner += text(14, groundY - 6, 'GROUND LEVEL', { size: 8, weight: 700, color: 'var(--bb-primary-500)', anchor: 'start', ls: '0.05em' });
+  inner += line(10, foundingY, cx - footW / 2, foundingY, { color: 'var(--bb-primary-500)', width: 1, dash: '2 2' });
+  inner += text(14, foundingY - 6, 'FOUNDING LEVEL', { size: 7.5, weight: 700, color: 'var(--bb-primary-500)', anchor: 'start', ls: '0.05em' });
+
+  // Footing
+  inner += rect(cx - footW / 2, foundingY - footTh, footW, footTh, { fill: 'var(--bb-primary)', stroke: 'var(--bb-primary-800)' });
+
+  // Layer bands below founding level
+  const bandRight = cx + footW / 2 + 4;
+  const bandLeft = cx - footW / 2 - 4;
+  layers.forEach((layer, i) => {
+    const top = Math.max(0, layer.top ?? 0);
+    const bottom = Math.min(drawDepth, layer.bottom ?? top);
+    if (bottom <= top) return;
+    const yTop = foundingY + top * kv;
+    const yBot = foundingY + bottom * kv;
+    const shade = i % 2 === 0 ? 'var(--bb-primary-100)' : 'var(--bb-primary-200)';
+    inner += rect(bandLeft, yTop, bandRight - bandLeft, yBot - yTop, { fill: shade, stroke: 'var(--bb-primary-300)', width: 0.75 });
+    if (yBot - yTop > 10) {
+      inner += text(bandLeft + 4, (yTop + yBot) / 2 + 3, `Es = ${layer.Es ?? '—'} MPa`, { size: 7.5, weight: 700, color: 'var(--bb-primary-700)', anchor: 'start' });
+    }
+  });
+  inner += line(bandLeft, foundingY, bandRight, foundingY, { color: 'var(--bb-primary)', width: 1 });
+
+  // Iz-vs-depth strain influence triangle
+  const izAxisX = bandRight + 46;
+  const izScale = 150;
+  const zpY = foundingY + zp * kv;
+  inner += line(izAxisX, foundingY, izAxisX, bottomY, { color: 'var(--bb-primary-400)', width: 1 });
+  const kite = `${izAxisX},${foundingY} ${izAxisX + Iz0 * izScale},${foundingY} ${izAxisX + Izp * izScale},${zpY} ${izAxisX},${bottomY}`;
+  inner += `<polygon points="${kite}" style="fill:var(--bb-accent);fill-opacity:0.18;stroke:var(--bb-accent);stroke-width:1.4" />`;
+  inner += text(izAxisX, foundingY - 6, 'Iz', { size: 9, weight: 800, color: 'var(--bb-accent-700)', anchor: 'start' });
+  inner += text(izAxisX + Izp * izScale + 4, zpY + 3, `Izp=${Izp.toFixed(2)}`, { size: 7.5, weight: 700, color: 'var(--bb-accent-700)', anchor: 'start' });
+  inner += line(bandRight, zpY, izAxisX, zpY, { color: 'var(--bb-primary-400)', width: 0.75, dash: '2 2' });
+  inner += text(izAxisX + 4, bottomY - 3, `z = ${zInfluence.toFixed(1)} m`, { size: 7.5, weight: 700, color: 'var(--bb-primary-500)', anchor: 'start' });
+
+  return svg('0 0 400 260', inner, soilHatchDef('ss-hatch'));
+}
+
 export default {
   id: 'schmertmann-settlement',
   title: 'Schmertmann Settlement — Shallow Foundations on Granular Soil',
   category: 'Geotechnical — Foundations',
+  tag: 'Schmertmann 1978',
   version: '1.0.0',
   references: [
     'Schmertmann, J.H., Hartman, J.P. and Brown, P.R. (1978) — Improved strain influence factor diagrams, ASCE J. Geotech. Eng. Div.',
@@ -62,6 +159,7 @@ export default {
         { top: 3, bottom: 6, Es: 25 },
       ] },
   ],
+  diagram,
   calculate: (v) => {
     const results = [];
     const steps = [];
@@ -76,13 +174,7 @@ export default {
     const t = v.t;
     const layers = v.layers || [];
 
-    function effStressAtDepthBelowFounding(z) {
-      const absDepth = D + z;
-      const submergedDepth = Math.max(0, absDepth - Math.max(Dw, 0));
-      return gamma * absDepth - GAMMA_W * submergedDepth;
-    }
-
-    const sigmaV0 = effStressAtDepthBelowFounding(0);
+    const sigmaV0 = effStress(D, gamma, Dw, 0);
     const deltaQ = q - sigmaV0;
 
     steps.push({
@@ -109,7 +201,7 @@ export default {
     const zp = axisymmetric ? 0.5 * B : B;
     const zInfluence = axisymmetric ? 2 * B : 4 * B;
 
-    const sigmaVp = effStressAtDepthBelowFounding(zp);
+    const sigmaVp = effStress(D, gamma, Dw, zp);
     const Izp = 0.5 + 0.1 * Math.sqrt(deltaQ / sigmaVp);
     const profile = { Iz0, zp, Izp, zInfluence };
 

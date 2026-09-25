@@ -5,6 +5,94 @@
 // Rankine formula) — see 'assumptions' below.
 
 import { toRad } from '../js/formatters.js';
+import { svg, soilHatchDef, line, rect, text, arrowHead, hDimension, vDimension, clamp } from '../js/diagrams.js';
+
+// Wall cross-section: toe on the left, heel (backfill) on the right, per
+// the vertical-toe-face / tapered-heel-face stem assumed throughout this
+// calc. Active thrust arrow at H/3 above the base; a marker under the
+// footing shows where the resultant lands, for a visual middle-third check.
+function diagram(v, output) {
+  const H = v.H || 3;
+  const tf = v.tf || 0.4;
+  const Lt = v.Lt || 0.8;
+  const tb = v.tb || 0.4;
+  const Lh = v.Lh || 2;
+  const tt = v.tt || 0.3;
+  const q = v.q || 0;
+  const totalB = Lt + tb + Lh;
+
+  const k = clamp(240 / totalB, 12, 55);
+  const kv = clamp(190 / (H + tf), 12, 55);
+
+  const marginL = 56;
+  const baseBotY = 230;
+  const tfPx = tf * kv;
+  const baseTopY = baseBotY - tfPx;
+  const HPx = H * kv;
+  const stemTopY = baseTopY - HPx;
+
+  const LtPx = Lt * k;
+  const tbPx = tb * k;
+  const LhPx = Lh * k;
+  const ttPx = tt * k;
+
+  const toeX = marginL;
+  const stemFrontX = toeX + LtPx;
+  const stemBackBaseX = stemFrontX + tbPx;
+  const stemBackTopX = stemFrontX + ttPx;
+  const heelX = stemBackBaseX + LhPx;
+  const groundY = stemTopY;
+
+  let inner = '';
+
+  // Backfill: behind the stem and over the heel, up to the top of the stem
+  const backfillRight = heelX + 24;
+  inner += rect(stemBackTopX - 2, groundY, backfillRight - (stemBackTopX - 2), baseBotY + 14 - groundY, { fill: 'var(--bb-primary-100)', stroke: 'none' });
+  inner += `<rect x="${stemBackTopX - 2}" y="${groundY}" width="${backfillRight - (stemBackTopX - 2)}" height="${baseBotY + 14 - groundY}" fill="url(#rw-hatch)" />`;
+  inner += line(stemBackTopX - 2, groundY, backfillRight, groundY, { color: 'var(--bb-primary)', width: 2 });
+  inner += text(backfillRight - 2, groundY - 7, 'BACKFILL', { size: 8, weight: 700, color: 'var(--bb-primary-500)', anchor: 'end', ls: '0.05em' });
+
+  // Shallow embedment sliver in front of the toe
+  inner += rect(toeX - 22, baseTopY, stemFrontX - (toeX - 22), baseBotY - baseTopY + 14, { fill: 'var(--bb-primary-100)', stroke: 'none' });
+  inner += `<rect x="${toeX - 22}" y="${baseTopY}" width="${stemFrontX - (toeX - 22)}" height="${baseBotY - baseTopY + 14}" fill="url(#rw-hatch)" />`;
+
+  // Stem (vertical toe-face, tapered heel-face) and footing
+  inner += `<polygon points="${stemFrontX},${stemTopY} ${stemBackTopX},${stemTopY} ${stemBackBaseX},${baseTopY} ${stemFrontX},${baseTopY}" style="fill:var(--bb-primary);stroke:var(--bb-primary-800);stroke-width:1.2" />`;
+  inner += rect(toeX, baseTopY, heelX - toeX, tfPx, { fill: 'var(--bb-primary)', stroke: 'var(--bb-primary-800)' });
+
+  // Surcharge arrows along the backfill surface
+  if (q > 0) {
+    for (let i = 0; i < 3; i++) {
+      const sx = stemBackTopX + 10 + i * ((backfillRight - stemBackTopX - 20) / 2);
+      inner += line(sx, groundY - 16, sx, groundY - 3, { color: 'var(--bb-accent)', width: 1.6 });
+      inner += arrowHead(sx, groundY - 2, 'down', { size: 4, color: 'var(--bb-accent)' });
+    }
+    inner += text((stemBackTopX + backfillRight) / 2, groundY - 20, `q = ${q} kPa`, { size: 8, weight: 700, color: 'var(--bb-accent-700)' });
+  }
+
+  // Active thrust arrow, applied at H/3 above the top of the footing
+  const paY = baseTopY - HPx / 3;
+  const stemMidX = (stemBackBaseX + stemBackTopX) / 2;
+  inner += line(backfillRight - 8, paY, stemMidX + 6, paY, { color: 'var(--bb-accent)', width: 2.6 });
+  inner += arrowHead(stemMidX + 4, paY, 'left', { color: 'var(--bb-accent)' });
+  inner += text((backfillRight + stemMidX) / 2, paY - 6, 'Pa', { size: 10, weight: 800, color: 'var(--bb-accent-700)' });
+
+  // Resultant location marker (from the eccentricity result, if available)
+  const eResult = (output?.results || []).find((r) => r.symbol === 'e');
+  if (eResult) {
+    const xbar = totalB / 2 - eResult.value;
+    const rx = toeX + clamp(xbar, 0, totalB) * k;
+    inner += line(rx, baseBotY + 4, rx, baseBotY + 22, { color: 'var(--bb-primary-700)', width: 1.4 });
+    inner += arrowHead(rx, baseBotY + 4, 'up', { size: 5, color: 'var(--bb-primary-700)' });
+    inner += text(rx, baseBotY + 33, 'R', { size: 9, weight: 800, color: 'var(--bb-primary-700)' });
+  }
+
+  // Dimensions
+  inner += vDimension(toeX - 34, stemTopY, baseTopY, `H = ${H} m`, { extendToX: stemFrontX });
+  inner += hDimension(toeX, heelX, baseBotY + 54, `B = ${totalB.toFixed(2)} m`, { extendFromY: baseBotY });
+
+  return svg('0 0 400 300', inner, soilHatchDef('rw-hatch'));
+}
 
 function rankineKaSloping(phiDeg, betaDeg) {
   const phi = toRad(phiDeg);
@@ -28,6 +116,7 @@ export default {
   id: 'retaining-wall',
   title: 'Cantilever Retaining Wall Stability',
   category: 'Geotechnical — Retaining structures',
+  tag: 'EC7 / PD 6694-1',
   version: '1.0.0',
   references: [
     'BS EN 1997-1:2004+A1:2013 (Eurocode 7) — Geotechnical design',
@@ -62,6 +151,7 @@ export default {
       help: 'Enter 0 to ignore passive resistance (common for a conservative preliminary check).' },
     { name: 'gammac', label: 'Concrete unit weight γc', type: 'number', unit: 'kN/m³', default: 24, min: 20, max: 26, step: 0.5 },
   ],
+  diagram,
   calculate: (v) => {
     const results = [];
     const steps = [];

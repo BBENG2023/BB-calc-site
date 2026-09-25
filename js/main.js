@@ -31,20 +31,29 @@ function renderCatalogue(root) {
 
   const categories = [...byCategory.keys()].sort();
   categories.forEach((category) => {
+    const calcsInGroup = byCategory.get(category);
     const group = document.createElement('div');
     group.className = 'catalogue-group';
-    group.innerHTML = `<h2>${escapeHtml(category)}</h2>`;
+    group.innerHTML = `
+      <div class="group-head">
+        <h2>${escapeHtml(category)}</h2>
+        <span class="group-count">${calcsInGroup.length} tool${calcsInGroup.length === 1 ? '' : 's'}</span>
+      </div>`;
 
     const grid = document.createElement('div');
     grid.className = 'card-grid';
-    byCategory.get(category).forEach((calc) => {
+    calcsInGroup.forEach((calc) => {
       const card = document.createElement('a');
       card.className = 'calc-card';
       card.href = `calc.html?id=${encodeURIComponent(calc.id)}`;
       card.innerHTML = `
+        <span class="card-tag">${escapeHtml(calc.tag || calc.category)}</span>
         <h3>${escapeHtml(calc.title)}</h3>
         <p>${escapeHtml(calc.description)}</p>
-        <span class="open-link">Open →</span>`;
+        <div class="card-foot">
+          <span>${escapeHtml(calc.category)}</span>
+          <span class="open-link">Open →</span>
+        </div>`;
       grid.append(card);
     });
     group.append(grid);
@@ -98,6 +107,17 @@ function renderCalcPage(root) {
   layout.append(leftCol, rightCol);
   root.append(layout);
 
+  let diagramFrame = null;
+  if (calc.diagram) {
+    const diagramSection = document.createElement('section');
+    diagramSection.className = 'diagram-section';
+    diagramSection.innerHTML = '<h2>Definition diagram</h2><p class="muted">Schematic, updates live with your inputs — not for scaling off.</p>';
+    diagramFrame = document.createElement('div');
+    diagramFrame.className = 'diagram-frame';
+    diagramSection.append(diagramFrame);
+    root.append(diagramSection);
+  }
+
   const reportSection = document.createElement('section');
   reportSection.className = 'report-section';
   reportSection.innerHTML = '<h2>Preview report</h2><p class="muted">This is exactly what prints when you choose "Print / Save as PDF".</p>';
@@ -115,7 +135,7 @@ function renderCalcPage(root) {
   let debounceHandle = null;
   function scheduleRecalc() {
     clearTimeout(debounceHandle);
-    debounceHandle = setTimeout(() => recalc(calc, values, resultsPanel, reportFrame), DEBOUNCE_MS);
+    debounceHandle = setTimeout(() => recalc(calc, values, resultsPanel, reportFrame, diagramFrame), DEBOUNCE_MS);
   }
 
   let form = buildForm(calc, values, scheduleRecalc);
@@ -125,14 +145,22 @@ function renderCalcPage(root) {
   wireButtons(calc, btnRow, values, () => form, (rebuilt) => {
     form = rebuilt;
     updateUrl(calc, values);
-    recalc(calc, values, resultsPanel, reportFrame);
+    recalc(calc, values, resultsPanel, reportFrame, diagramFrame);
   }, scheduleRecalc, toast);
 
   updateUrl(calc, values);
-  recalc(calc, values, resultsPanel, reportFrame);
+  recalc(calc, values, resultsPanel, reportFrame, diagramFrame);
 }
 
 function buildCalcHeader(calc) {
+  const wrap = document.createDocumentFragment();
+
+  const breadcrumb = document.createElement('a');
+  breadcrumb.className = 'breadcrumb';
+  breadcrumb.href = 'index.html';
+  breadcrumb.textContent = '← Catalogue';
+  wrap.append(breadcrumb);
+
   const header = document.createElement('div');
   header.className = 'page-header';
   header.innerHTML = `
@@ -140,7 +168,9 @@ function buildCalcHeader(calc) {
     <h1>${escapeHtml(calc.title)}</h1>
     <p>${escapeHtml(calc.description)}</p>
     <p class="muted">ID: ${escapeHtml(calc.id)} · v${escapeHtml(calc.version)}</p>`;
-  return header;
+  wrap.append(header);
+
+  return wrap;
 }
 
 function buildInfoBlocks(calc) {
@@ -534,7 +564,7 @@ function wireButtons(calc, row, values, getForm, onReset, scheduleRecalc, toast)
 
 // --- Recalculation --------------------------------------------------------------
 
-function recalc(calc, values, resultsPanel, reportFrame) {
+function recalc(calc, values, resultsPanel, reportFrame, diagramFrame) {
   let output;
   try {
     output = calc.calculate(values) || {};
@@ -543,6 +573,14 @@ function recalc(calc, values, resultsPanel, reportFrame) {
   }
 
   renderResults(resultsPanel, output);
+
+  if (diagramFrame && calc.diagram) {
+    try {
+      diagramFrame.innerHTML = calc.diagram(values, output);
+    } catch (err) {
+      diagramFrame.innerHTML = `<p class="muted">Diagram unavailable: ${escapeHtml(err.message)}</p>`;
+    }
+  }
 
   const visibleNames = new Set(calc.inputs.filter((d) => isVisible(d, values)).map((d) => d.name));
   reportFrame.innerHTML = '';
@@ -556,9 +594,26 @@ function renderResults(panel, output) {
   if (!results.length) {
     panel.innerHTML = '<p class="muted">Enter inputs to see results.</p>';
   } else {
-    results.forEach((r) => {
+    const highlighted = results.filter((r) => r.highlight);
+    const plain = results.filter((r) => !r.highlight);
+
+    if (highlighted.length) {
+      const grid = document.createElement('div');
+      grid.className = 'stat-grid';
+      highlighted.forEach((r) => {
+        const tile = document.createElement('div');
+        tile.className = 'stat-tile';
+        tile.innerHTML = `
+          <div class="stat-label">${escapeHtml(r.label)}${r.symbol ? ` (${escapeHtml(r.symbol)})` : ''}</div>
+          <div class="stat-value">${fmtUnit(r.value, r.unit, r.precision ?? 2)}</div>`;
+        grid.append(tile);
+      });
+      panel.append(grid);
+    }
+
+    plain.forEach((r) => {
       const row = document.createElement('div');
-      row.className = `result-row${r.highlight ? ' highlight' : ''}`;
+      row.className = 'result-row';
       row.innerHTML = `
         <span class="result-label">${escapeHtml(r.label)}${r.symbol ? ` (${escapeHtml(r.symbol)})` : ''}</span>
         <span class="result-value">${fmtUnit(r.value, r.unit, r.precision ?? 2)}</span>`;

@@ -14,6 +14,10 @@ export default {
   // landing page catalogue.
   category: 'Structural — Example',
 
+  // Optional. Short badge shown on the catalogue card (e.g. the design
+  // code it implements). Falls back to `category` if omitted.
+  tag: 'BS EN XXXX',
+
   // Semver string. Bump the minor version when you change the calculation
   // logic so engineers can tell whether an old printed sheet used a
   // different formula version.
@@ -59,6 +63,17 @@ export default {
       showIf: (v) => v.exampleShape === 'B',
       help: 'Only used for shape B.' },
   ],
+
+  // Optional. (values, output) => SVG markup string. Rendered live in a
+  // "Definition diagram" panel on the calc page and in the printed
+  // report's "Method & assumptions" section — see js/diagrams.js for the
+  // drawing helpers (line, rect, text, arrowHead, hDimension, vDimension,
+  // soilHatchDef) and bearing-capacity.js / retaining-wall.js /
+  // schmertmann-settlement.js / phase-relations.js for worked examples.
+  // Keep it schematic (proportionally clamped, captioned "not to scale")
+  // rather than a literal scale drawing, and reference colours via
+  // `style="fill:var(--bb-primary)"` etc. so it stays on-brand for free.
+  // diagram: (v, output) => svg('0 0 400 300', innerMarkup),
 
   // Pure function: (values) => output. Must not touch the DOM. Called on
   // every debounced input change (150 ms) and once when building the

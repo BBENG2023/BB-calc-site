@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,300;0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,600;0,800;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/layout.css" />
   <link rel="stylesheet" href="css/components.css" />
@@ -19,9 +19,10 @@
     <div class="container">
       <a class="brand" href="index.html">
         <img src="assets/logo.svg" alt="Beaver Bridges" />
-        <span class="brand-text">Beaver Bridges — Engineering Toolkit</span>
+        <span class="brand-text">Beaver Bridges</span>
       </a>
-      <span class="tagline">Preliminary engineering calculation tools</span>
+      <span class="divider"></span>
+      <span class="tagline">Engineering Toolkit</span>
       <nav>
         <a href="index.html" aria-current="page">Catalogue</a>
         <a href="about.html">About</a>
@@ -39,22 +40,29 @@
     </div>
   </div>
 
-  <main>
+  <section class="hero">
     <div class="container">
-      <div class="page-header">
-        <h1>Engineering calculation toolkit</h1>
-        <p>Preliminary engineering calculation tools. All outputs require CEng verification prior to use.</p>
+      <div class="kicker">Internal engineering tools</div>
+      <h1>Engineering calculation toolkit</h1>
+      <p>A growing library of preliminary calculations for early-stage design of substructure and geotechnical elements — quick, consistent, and checkable.</p>
+      <div class="hero-actions">
+        <a href="#catalogue-root" class="btn btn-hero-primary">Browse calculations</a>
+        <a href="about.html" class="btn btn-hero-secondary">About the toolkit</a>
       </div>
+    </div>
+  </section>
 
+  <main>
+    <div class="container catalogue-intro">
       <div id="catalogue-root"></div>
     </div>
   </main>
 
   <footer class="site-footer">
     <div class="container">
-      <span>Beaver Bridges Ltd — Engineering Toolkit · v1.0.0</span>
-      <span>Last updated 24 September 2026</span>
-      <span><a href="about.html">About</a></span>
+      <strong>Beaver Bridges Ltd — Engineering Toolkit · v1.0.0</strong>
+      <span>Last updated 25 September 2026</span>
+      <a href="about.html">About</a>
       <span>GitHub repo: fill in after creating the repository (see README)</span>
       <span>Internal use only. Preliminary — requires CEng verification.</span>
     </div>

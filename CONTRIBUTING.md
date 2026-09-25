@@ -114,6 +114,22 @@ export default {
   than overloading `number`/`select` — see the "Adding a new custom field
   type" section below.
 
+- **`diagram(v, output)`** — optional. Returns an SVG markup string built
+  with the helpers in `js/diagrams.js` (`svg`, `line`, `rect`, `text`,
+  `arrowHead`, `hDimension`, `vDimension`, `soilHatchDef`, `clamp`). When
+  present it renders in a live "Definition diagram" panel on the calc page
+  (updating on every recalculation) and in the printed report's "Method &
+  assumptions" section, two-up alongside the assumptions bullets. All four
+  shipped calcs have one — `bearing-capacity.js` for a straightforward
+  section-through-a-footing example, `schmertmann-settlement.js` for a
+  more involved one (the classic Iz-vs-depth strain-influence figure).
+  Keep it schematic and proportionally clamped rather than literally to
+  scale — every diagram carries a "not to scale" caption — and reference
+  colours via inline style (`style="fill:var(--bb-primary)"`) rather than
+  hard-coded hex so it stays on-brand if the tokens in `css/base.css` ever
+  change. It's optional: a calc with no `diagram` field simply shows no
+  diagram panel and the report's assumptions render as a single column.
+
 - **`calculate(v)`** — a pure function: `(values) => output`. It must not
   touch the DOM, must not have side effects, and must run fast — it fires
   on every debounced input change (150 ms) and once when building the

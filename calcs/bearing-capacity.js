@@ -3,8 +3,63 @@
 // as a special case. See CONTRIBUTING.md for the module contract.
 
 import { toRad } from '../js/formatters.js';
+import { svg, soilHatchDef, line, rect, text, arrowHead, hDimension, vDimension, clamp } from '../js/diagrams.js';
 
 const GAMMA_W = 9.81; // kN/m3
+
+// Schematic section through the footing: ground line, soil (hatched),
+// stem/column stub, footing, applied load arrow, bearing pressure arrows,
+// and B / D dimension lines. See js/diagrams.js for the drawing helpers.
+function diagram(v, output) {
+  const B = v.B || 2.5;
+  const D = v.D || 0;
+  const headline = (output?.results || []).find((r) => r.highlight) || {};
+  const qLabel = headline.value !== undefined ? `q = ${headline.value.toFixed(0)} kPa` : '';
+
+  const groundY = 90;
+  const cx = 200;
+  const footW = clamp(B * 26, 60, 230);
+  const footL = cx - footW / 2;
+  const footR = cx + footW / 2;
+  const depthPx = clamp(D * 40, 10, 130);
+  const footTopY = groundY + depthPx;
+  const footTh = 18;
+  const footBotY = footTopY + footTh;
+  const stemW = 26;
+  const stemTopY = groundY - 40;
+
+  let inner = '';
+  inner += `<rect x="20" y="${groundY}" width="360" height="${300 - groundY}" style="fill:var(--bb-primary-100)" />`;
+  inner += `<rect x="20" y="${groundY}" width="360" height="${300 - groundY}" fill="url(#bc-hatch)" />`;
+  inner += line(20, groundY, 380, groundY, { color: 'var(--bb-primary)', width: 2 });
+  inner += text(26, groundY - 8, 'GROUND LEVEL', { size: 9, weight: 700, color: 'var(--bb-primary-500)', anchor: 'start', ls: '0.06em' });
+
+  // Column stub + footing
+  inner += rect(cx - stemW / 2, stemTopY, stemW, footTopY - stemTopY, { fill: 'var(--bb-primary-300)', stroke: 'var(--bb-primary-700)' });
+  inner += rect(footL, footTopY, footW, footTh, { fill: 'var(--bb-primary)', stroke: 'var(--bb-primary-800)' });
+
+  // Applied load arrow
+  inner += line(cx, stemTopY - 34, cx, stemTopY - 6, { color: 'var(--bb-accent)', width: 3 });
+  inner += arrowHead(cx, stemTopY, 'down', { color: 'var(--bb-accent)' });
+  inner += text(cx, stemTopY - 40, 'APPLIED LOAD', { size: 9, weight: 800, color: 'var(--bb-accent-700)', ls: '0.05em' });
+
+  // Bearing pressure arrows, pointing up into the footing
+  const n = Math.max(3, Math.round(footW / 44));
+  for (let i = 0; i < n; i++) {
+    const px = footL + (footW * (i + 0.5)) / n;
+    const tailY = footBotY + 34;
+    const headY = footBotY + 8;
+    inner += line(px, tailY, px, headY, { color: 'var(--bb-accent)', width: 2 });
+    inner += arrowHead(px, headY, 'up', { color: 'var(--bb-accent)' });
+  }
+  if (qLabel) inner += text(cx, footBotY + 52, qLabel, { size: 11, weight: 800, color: 'var(--bb-accent-700)' });
+
+  // Dimensions
+  inner += vDimension(48, groundY, footBotY, `D = ${D} m`, { extendToX: footL, color: 'var(--bb-ink)' });
+  inner += hDimension(footL, footR, footBotY + 78, `B = ${B} m`, { extendFromY: footBotY });
+
+  return svg('0 0 400 300', inner, soilHatchDef('bc-hatch'));
+}
 
 function bearingFactors(phiDeg) {
   const phi = toRad(phiDeg);
@@ -64,6 +119,7 @@ export default {
   id: 'bearing-capacity',
   title: 'Shallow Foundation Bearing Capacity',
   category: 'Geotechnical — Foundations',
+  tag: 'EC7 Annex D',
   version: '1.0.0',
   references: [
     'BS EN 1997-1:2004+A1:2013 (Eurocode 7) — Geotechnical design',
@@ -95,6 +151,7 @@ export default {
     { name: 'qEd', label: 'Applied bearing pressure (optional)', type: 'number', unit: 'kPa', default: undefined, min: 0, step: 1,
       help: 'Leave blank to report qRd only, with no pass/fail verdict.' },
   ],
+  diagram,
   calculate: (v) => {
     const results = [];
     const steps = [];

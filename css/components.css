@@ -19,7 +19,7 @@
 }
 
 .btn:hover {
-  background: #133a5c;
+  background: var(--bb-primary-600);
 }
 
 .btn.secondary {
@@ -195,19 +195,60 @@ details.info-block li {
   white-space: nowrap;
 }
 
-/* Scoped to .results-panel specifically (not .rs-results-box in the report
-   sheet) — the negative margin bleeds the highlight to the panel's own
-   edges, which would break out of the report's tighter results box. */
-.results-panel .result-row.highlight {
-  background: var(--bb-paper);
-  margin: 0 -1.25rem;
-  padding: 0.6em 1.25rem;
-  border-bottom: none;
+/* --- Stat tiles (headline / highlighted results) ---
+   Highlighted results render as tiles above the row list, not as rows:
+   the first tile is solid navy, any further ones are outlined — mirrors
+   the paired qult/qRd headline treatment. Same classes are reused inside
+   the printed report sheet; print.css adds pt-scale overrides there. */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 2px;
+  background: var(--bb-line);
+  border: 1px solid var(--bb-line);
+  margin-bottom: 1rem;
 }
 
-.result-row.highlight .result-value {
-  font-size: 1.15rem;
+.stat-tile {
+  background: var(--bb-surface);
+  padding: 1rem 1.1rem;
+}
+
+.stat-tile:first-child {
+  background: var(--bb-primary);
+  color: #fff;
+}
+
+.stat-tile .stat-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--bb-primary-500);
+  margin-bottom: 0.4rem;
+}
+
+.stat-tile:first-child .stat-label {
+  color: var(--bb-accent-400);
+}
+
+.stat-tile .stat-value {
+  font-weight: 800;
+  font-size: 1.9rem;
+  line-height: 1.05;
   color: var(--bb-primary);
+}
+
+.stat-tile:first-child .stat-value {
+  color: #fff;
+}
+
+.stat-tile .stat-unit {
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-left: 0.25em;
+  opacity: 0.7;
 }
 
 .verdict-banner {

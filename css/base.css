@@ -1,23 +1,56 @@
 /* base.css — reset, design tokens, typography
-   Carlito is loaded via the Google Fonts <link> in each page's <head> (the
+   Archivo is loaded via the Google Fonts <link> in each page's <head> (the
    one sanctioned external call per the build brief) — see index.html etc.
-   The fallback stack below covers 'Calibri Light', which is metric-
-   identical to Carlito, if that link is ever unreachable. */
+   Brand retint: navy #1C2B55 primary, warm orange #E27A00 accent. The
+   safety/verification banner intentionally keeps its own warning colours
+   (--bb-warn-*) rather than the brand accent — it's a hazard notice, not a
+   brand moment, and stays non-dismissible per the build brief (§8). */
 
 :root {
-  --bb-primary: #0F2E47;
-  --bb-accent:  #C8A55B;
-  --bb-paper:   #F7F5F1;
-  --bb-ink:     #1A1A1A;
-  --bb-muted:   #6B6B6B;
-  --bb-line:    #D6D2CA;
+  --bb-primary: #1C2B55;
+  --bb-primary-100: #eaedf3;
+  --bb-primary-200: #ccd4e4;
+  --bb-primary-300: #a3b0cd;
+  --bb-primary-400: #6475a2;
+  --bb-primary-500: #33477b;
+  --bb-primary-600: #182648;
+  --bb-primary-700: #12203c;
+  --bb-primary-800: #0d182e;
+  --bb-primary-900: #08101f;
+
+  --bb-accent: #E27A00;
+  --bb-accent-100: #fdf1de;
+  --bb-accent-200: #f9ddb2;
+  --bb-accent-300: #f4c179;
+  --bb-accent-400: #ee9f38;
+  --bb-accent-500: #e27a00;
+  --bb-accent-600: #c06700;
+  --bb-accent-700: #955000;
+  --bb-accent-800: #6c3a00;
+  --bb-accent-900: #472600;
+
+  --bb-paper:   #F4F4F3;
+  --bb-surface: #FFFFFF;
+  --bb-ink:     #1A1E28;
+  --bb-muted:   #6B7080;
+  --bb-line:    #D2D5DD; /* ~20% navy tint over white, as a plain hex so
+                            border-shorthand parsing never depends on
+                            color-mix() support */
+
+  /* Hazard/warning colours — deliberately distinct from the brand accent
+     above so the mandatory verification notice always reads as a safety
+     signal, never as house style. */
   --bb-warn-bg: #FFF4E1;
   --bb-warn-ln: #C48A1A;
   --bb-ok:      #2E7D5B;
   --bb-err:     #B23A2E;
 
-  --bb-font: 'Carlito', 'Calibri Light', 'Calibri', 'Segoe UI', system-ui, sans-serif;
-  --bb-radius: 4px;
+  --bb-font: 'Archivo', 'Calibri Light', 'Calibri', 'Segoe UI', system-ui, sans-serif;
+  --bb-radius: 3px;
+  --bb-container: 1160px;
+
+  --bb-shadow-sm: 0 1px 2px rgba(8, 16, 31, 0.10);
+  --bb-shadow-md: 0 3px 10px rgba(8, 16, 31, 0.12);
 }
 
 *, *::before, *::after {
@@ -40,15 +73,16 @@ body {
 }
 
 h1, h2, h3, h4 {
-  font-weight: 700;
-  line-height: 1.25;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
   margin: 0 0 0.5em;
   color: var(--bb-primary);
 }
 
-h1 { font-size: 1.75rem; }
-h2 { font-size: 1.3rem; }
-h3 { font-size: 1.05rem; }
+h1 { font-size: 2rem; }
+h2 { font-size: 1.4rem; }
+h3 { font-size: 1.1rem; }
 
 p {
   margin: 0 0 1em;
@@ -78,6 +112,14 @@ th, td {
   text-align: left;
   padding: 0.4em 0.6em;
   border-bottom: 1px solid var(--bb-line);
+}
+
+th {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bb-muted);
+  font-weight: 700;
 }
 
 td.num, th.num {
