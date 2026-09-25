@@ -18,15 +18,22 @@ layout, routing, or CSS.
      retainingWall,
      schmertmannSettlement,
      phaseRelations,
+     haulRoad,
+     pilingMatBre470,
+     windPressureEc1,
+     herasFencing,
+     serviceProtectionSlab,
      myNewCalc, // <- the one line you add
    ];
    ```
 
 Every new calc **must**:
 
-- Reference UK/EC design standards (Eurocodes with UK National Annexes,
-  DMRB, Network Rail / client-specific standards) in its `references`
-  array — or state clearly why a different source was used.
+- Reference UK/EC design standards in its `references` array, and each
+  reference must give the standard's number, year, and (where the
+  calculation turns on a specific clause) the clause reference — e.g.
+  `"BS EN 1997-1:2004+A1:2013 (Eurocode 7) Annex D"`, not just "Eurocode 7"
+  — or state clearly why a different source was used.
 - Include at least one entry in `validation.samples` with a known
   expected output and tolerance.
 - Be understood to carry the standard CEng verification statement — this
@@ -201,15 +208,68 @@ symbolic formula and the final answer.
 ## Adding a new custom field type (rare)
 
 Only needed if a calc's inputs genuinely can't be expressed as a flat list
-of numbers/selects (as `layers` and `phase-picker` needed). If you must:
+of numbers/selects (as `layers`, `phase-picker` and `vehicle-rows`
+needed — see `haul-road.js`'s `vehicles` input for the most recent
+example, a repeating table with a per-row dropdown). If you must:
 
 1. Add a branch in `buildField()` in `js/main.js` for your new
    `type`, following the pattern of `buildLayersField` /
-   `buildPhasePickerField` (self-contained, calls the passed-in `onChange`
-   callback directly rather than relying on the delegated form listener).
+   `buildPhasePickerField` / `buildVehicleRowsField` (self-contained,
+   calls the passed-in `onChange` callback directly rather than relying
+   on the delegated form listener).
 2. Add a branch in the inputs-table loop in `js/report.js` so the printed
    report renders it sensibly instead of stringifying an object.
-3. Handle URL round-tripping in `initialValues()` / `updateUrl()` in
-   `js/main.js` if the value isn't a plain string/number (structured
-   values are JSON-encoded in the query string — see how `layers` and
-   `phase-picker` do it).
+3. Add your type's name to `STRUCTURED_TYPES` in `js/main.js` so
+   `initialValues()` / `updateUrl()` JSON-encode it in the query string
+   instead of treating it as a plain string/number.
+
+## The `js/shared-data.js` pattern
+
+Tables and constants that recur across more than one calc — timber
+section properties, EC7 partial factor sets, bearing capacity factors,
+BRE 470's platform-material tables — live in `js/shared-data.js`, once,
+as plain exported constants or small pure functions. A calc imports what
+it needs:
+
+```js
+import { bearingCapacityFactors, EC7_PARTIAL_FACTORS } from '../js/shared-data.js';
+```
+
+Rules:
+
+- If two or more calcs would otherwise hardcode the same table or
+  formula, it belongs in `shared-data.js`, not copy-pasted.
+- If a value an existing calc already hardcodes turns out to be needed
+  elsewhere, move it into `shared-data.js` and re-point the existing calc
+  at the import — then **re-run `test.html`** (or the validation harness)
+  to prove the refactor didn't change any calc's numbers. A data-source
+  refactor must never change a result; if it does, you've introduced a
+  bug, not "improved" the calc.
+- Don't add a value to `shared-data.js` "for later" — only add what a
+  real calc actually imports today.
+
+## The `_pipe` cross-calc handoff pattern
+
+Any calc's headline (highlighted) result can be sent to any other calc's
+input field via a URL round trip — see `js/pipe.js` for the full
+mechanism and `heras-fencing.js`'s `qp_kPa` input (piped from
+`wind-pressure-ec1.js`) for the worked example. No shared state, no
+iframe: just two query params (`_pipe`, `_pipeReturn`) and a `_piped`
+marker on the way back.
+
+To make a field able to receive a piped value, add `pipeFrom:
+'<producer-calc-id>'` to its input definition:
+
+```js
+{ name: 'qp_kPa', label: 'Peak velocity pressure qp(z)', type: 'number', unit: 'kPa', default: 0.2,
+  pipeFrom: 'wind-pressure-ec1' },
+```
+
+That's the whole integration on the consumer side — `main.js` renders the
+"Use output from <producer>" link automatically, and the producer calc
+automatically shows a "Send back" button next to its headline result
+whenever it's opened via a pipe request (again, no changes needed in the
+producer calc itself). The value that gets sent back is always the
+producer's **first highlighted result** — if a calc has more than one
+highlighted result, make sure the one meant to be piped out is listed
+first in `calculate()`'s `results` array.

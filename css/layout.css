@@ -35,14 +35,9 @@
 
 .site-nav .brand img,
 .site-nav .brand svg {
-  height: 26px;
+  height: 38px;
   width: auto;
   display: block;
-}
-
-.site-nav .brand-text {
-  font-size: 0.95rem;
-  white-space: nowrap;
 }
 
 .site-nav .divider {
@@ -219,6 +214,15 @@ main {
 
 .catalogue-intro {
   padding-top: 2rem;
+}
+
+.catalogue-count {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bb-muted);
+  margin-bottom: 1.5rem;
 }
 
 .catalogue-group {

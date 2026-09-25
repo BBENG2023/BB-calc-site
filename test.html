@@ -17,9 +17,14 @@
         <h1>Validation samples</h1>
         <p class="muted">
           Hidden page, not linked from navigation. Runs every calc's <code>validation.samples</code>
-          against its own <code>calculate()</code>. Use this after changing any calculation logic.
+          against its own <code>calculate()</code>. Use this after changing any calculation logic —
+          especially after touching <code>js/shared-data.js</code>, which several calcs depend on.
         </p>
       </div>
+      <div class="btn-row">
+        <button type="button" class="btn" id="run-all-btn">Run all tests</button>
+      </div>
+      <p id="summary-line" class="verdict-banner"></p>
       <div id="validation-root"></div>
     </div>
   </main>
@@ -30,40 +35,62 @@
     import { escapeHtml } from './js/formatters.js';
 
     const root = document.getElementById('validation-root');
-    const rows = runValidation(registry);
+    const summaryLine = document.getElementById('summary-line');
+    const runAllBtn = document.getElementById('run-all-btn');
 
-    rows.forEach((row) => {
-      const section = document.createElement('section');
-      section.style.marginBottom = '2rem';
+    function render() {
+      const rows = runValidation(registry);
+      root.innerHTML = '';
 
-      if (row.noSamples) {
-        section.innerHTML = `<h2>${escapeHtml(row.calcTitle)} (${escapeHtml(row.calcId)})</h2>
-          <p class="verdict-banner fail">No validation samples defined.</p>`;
+      let totalChecks = 0, passedChecks = 0, anyNoSamples = false, anyError = false;
+
+      rows.forEach((row) => {
+        const section = document.createElement('section');
+        section.style.marginBottom = '2rem';
+
+        if (row.noSamples) {
+          anyNoSamples = true;
+          section.innerHTML = `<h2>${escapeHtml(row.calcTitle)} (${escapeHtml(row.calcId)})</h2>
+            <p class="verdict-banner fail">No validation samples defined.</p>`;
+          root.append(section);
+          return;
+        }
+
+        totalChecks += row.checks.length;
+        passedChecks += row.checks.filter((c) => c.pass).length;
+        if (row.error) anyError = true;
+
+        const allPass = row.checks.every((c) => c.pass) && !row.error;
+        section.innerHTML = `
+          <h2>${escapeHtml(row.calcTitle)} (${escapeHtml(row.calcId)})</h2>
+          <p><strong>${escapeHtml(row.sampleName)}</strong></p>
+          ${row.error ? `<p class="verdict-banner fail">Error: ${escapeHtml(row.error)}</p>` : ''}
+          <table>
+            <thead><tr><th>Symbol</th><th>Expected</th><th>Tolerance</th><th>Actual</th><th>Result</th></tr></thead>
+            <tbody>
+              ${row.checks.map((c) => `
+                <tr>
+                  <td>${escapeHtml(c.symbol)}</td>
+                  <td class="num">${c.expected} ${escapeHtml(c.unit || '')}</td>
+                  <td class="num">± ${c.tol}</td>
+                  <td class="num">${c.actual === undefined ? '—' : c.actual.toFixed(3)}</td>
+                  <td>${c.pass ? '✅ pass' : '❌ FAIL'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+          <p class="verdict-banner ${allPass ? 'pass' : 'fail'}">${allPass ? 'PASS' : 'FAIL'}</p>`;
         root.append(section);
-        return;
-      }
+      });
 
-      const allPass = row.checks.every((c) => c.pass) && !row.error;
-      section.innerHTML = `
-        <h2>${escapeHtml(row.calcTitle)} (${escapeHtml(row.calcId)})</h2>
-        <p><strong>${escapeHtml(row.sampleName)}</strong></p>
-        ${row.error ? `<p class="verdict-banner fail">Error: ${escapeHtml(row.error)}</p>` : ''}
-        <table>
-          <thead><tr><th>Symbol</th><th>Expected</th><th>Tolerance</th><th>Actual</th><th>Result</th></tr></thead>
-          <tbody>
-            ${row.checks.map((c) => `
-              <tr>
-                <td>${escapeHtml(c.symbol)}</td>
-                <td class="num">${c.expected} ${escapeHtml(c.unit || '')}</td>
-                <td class="num">± ${c.tol}</td>
-                <td class="num">${c.actual === undefined ? '—' : c.actual.toFixed(3)}</td>
-                <td>${c.pass ? '✅ pass' : '❌ FAIL'}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-        <p class="verdict-banner ${allPass ? 'pass' : 'fail'}">${allPass ? 'PASS' : 'FAIL'}</p>`;
-      root.append(section);
-    });
+      const allGood = passedChecks === totalChecks && !anyNoSamples && !anyError;
+      summaryLine.className = `verdict-banner ${allGood ? 'pass' : 'fail'}`;
+      summaryLine.textContent = `${registry.length} calc(s) checked — ${passedChecks}/${totalChecks} checks passed`
+        + (anyNoSamples ? ' — one or more calcs have no validation samples' : '')
+        + (anyError ? ' — one or more calcs threw an error' : '');
+    }
+
+    runAllBtn.addEventListener('click', render);
+    render();
   </script>
 </body>
 </html>

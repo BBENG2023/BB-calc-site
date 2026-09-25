@@ -6,6 +6,8 @@
 import { registry } from './registry.js';
 import { fmtUnit, escapeHtml } from './formatters.js';
 import { buildReportSheet } from './report.js';
+import { HEADER_FIELDS, loadHeaderDetails, saveHeaderDetails } from './header-details.js';
+import { parsePipeRequest, buildPipeRequestLink, buildSendBackButton } from './pipe.js';
 
 const DEBOUNCE_MS = 150;
 
@@ -22,6 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // ---------------------------------------------------------------------
 
 function renderCatalogue(root) {
+  const countEl = document.getElementById('catalogue-count');
+  if (countEl) countEl.textContent = `${registry.length} calculation tool${registry.length === 1 ? '' : 's'} available`;
+
   const byCategory = new Map();
   registry.forEach((calc) => {
     const key = calc.category || 'Uncategorised';
@@ -86,9 +91,20 @@ function renderCalcPage(root) {
   document.title = `${calc.title} — Beaver Bridges Engineering Toolkit`;
 
   const values = initialValues(calc, params);
+  const headerDetails = loadHeaderDetails();
+  const pipedFieldName = params.get('_piped');
+  const pipeRequest = parsePipeRequest(params);
 
   root.innerHTML = '';
   root.append(buildCalcHeader(calc));
+
+  if (pipeRequest) {
+    const consumerCalc = registry.find((c) => c.id === pipeRequest.consumerCalcId);
+    const notice = document.createElement('div');
+    notice.className = 'pipe-notice';
+    notice.textContent = `Requested by ${consumerCalc ? consumerCalc.title : pipeRequest.consumerCalcId} — use "Send back" below the headline result once you're happy with it.`;
+    root.append(notice);
+  }
 
   const layout = document.createElement('div');
   layout.className = 'calc-layout';
@@ -118,6 +134,8 @@ function renderCalcPage(root) {
     root.append(diagramSection);
   }
 
+  root.append(buildHeaderDetailsPanel(headerDetails, () => recalc(calc, values, resultsPanel, reportFrame, diagramFrame, headerDetails, pipeRequest)));
+
   const reportSection = document.createElement('section');
   reportSection.className = 'report-section';
   reportSection.innerHTML = '<h2>Preview report</h2><p class="muted">This is exactly what prints when you choose "Print / Save as PDF".</p>';
@@ -135,7 +153,7 @@ function renderCalcPage(root) {
   let debounceHandle = null;
   function scheduleRecalc() {
     clearTimeout(debounceHandle);
-    debounceHandle = setTimeout(() => recalc(calc, values, resultsPanel, reportFrame, diagramFrame), DEBOUNCE_MS);
+    debounceHandle = setTimeout(() => recalc(calc, values, resultsPanel, reportFrame, diagramFrame, headerDetails, pipeRequest), DEBOUNCE_MS);
   }
 
   let form = buildForm(calc, values, scheduleRecalc);
@@ -145,11 +163,84 @@ function renderCalcPage(root) {
   wireButtons(calc, btnRow, values, () => form, (rebuilt) => {
     form = rebuilt;
     updateUrl(calc, values);
-    recalc(calc, values, resultsPanel, reportFrame, diagramFrame);
+    recalc(calc, values, resultsPanel, reportFrame, diagramFrame, headerDetails, pipeRequest);
   }, scheduleRecalc, toast);
 
+  if (pipedFieldName) markPipedField(form, pipedFieldName, params);
+
   updateUrl(calc, values);
-  recalc(calc, values, resultsPanel, reportFrame, diagramFrame);
+  recalc(calc, values, resultsPanel, reportFrame, diagramFrame, headerDetails, pipeRequest);
+}
+
+// "Header details" collapsible — project no./title/sheet/date/engineer
+// fields, persisted to localStorage (js/header-details.js) and shared
+// across every calc since it's normally the same job. `onChange` re-runs
+// the report render so the printed sheet reflects an edit immediately.
+function buildHeaderDetailsPanel(headerDetails, onChange) {
+  const details = document.createElement('details');
+  details.className = 'info-block header-details';
+  details.innerHTML = '<summary>Header details (project no., sheet no., date, engineer)</summary>';
+
+  const grid = document.createElement('div');
+  grid.className = 'header-details-grid';
+
+  HEADER_FIELDS.forEach((f) => {
+    const field = document.createElement('div');
+    field.className = 'field';
+    const label = document.createElement('label');
+    label.htmlFor = `hdr-${f.key}`;
+    label.textContent = f.label;
+    field.append(label);
+
+    const input = document.createElement('input');
+    input.type = f.type === 'date' ? 'text' : 'text';
+    input.id = `hdr-${f.key}`;
+    input.placeholder = f.type === 'date' ? 'DD/MM/YYYY' : '';
+    input.value = headerDetails[f.key] || '';
+    if (f.datalist) {
+      const listId = `hdr-list-${f.key}`;
+      input.setAttribute('list', listId);
+      const dl = document.createElement('datalist');
+      dl.id = listId;
+      f.datalist.forEach((opt) => {
+        const o = document.createElement('option');
+        o.value = opt;
+        dl.append(o);
+      });
+      field.append(dl);
+    }
+    input.addEventListener('input', () => {
+      headerDetails[f.key] = input.value;
+      saveHeaderDetails(headerDetails);
+      onChange();
+    });
+    field.append(input);
+
+    if (f.help) {
+      const help = document.createElement('div');
+      help.className = 'field-help';
+      help.textContent = f.help;
+      field.append(help);
+    }
+
+    grid.append(field);
+  });
+
+  details.append(grid);
+  return details;
+}
+
+// One-time note next to a field that was just filled in via the `_pipe`
+// handoff (js/pipe.js) — cleared as soon as the user edits it.
+function markPipedField(form, fieldName, params) {
+  const fieldEl = form.querySelector(`[data-field-for="${CSS.escape(fieldName)}"]`);
+  if (!fieldEl) return;
+  const note = document.createElement('div');
+  note.className = 'field-help pipe-received-note';
+  note.textContent = 'Sourced from another calc’s output — verify before relying on it.';
+  fieldEl.append(note);
+  const input = fieldEl.querySelector('input, select');
+  if (input) input.addEventListener('input', () => note.remove(), { once: true });
 }
 
 function buildCalcHeader(calc) {
@@ -197,11 +288,15 @@ function buildInfoBlocks(calc) {
 
 // --- Values / URL round-trip -------------------------------------------------
 
+// Custom field types whose value is a structured array/object (rather than
+// a plain string/number) — cloned on default, JSON-encoded in the URL.
+const STRUCTURED_TYPES = new Set(['layers', 'phase-picker', 'vehicle-rows']);
+
 function defaultValueFor(def) {
-  // Structured types (arrays/objects) must be cloned per instance so that
-  // editing one calc session never mutates the module's shared default.
-  if (def.type === 'layers') return def.default.map((row) => ({ ...row }));
-  if (def.type === 'phase-picker') return { ...def.default };
+  // Structured types must be cloned per instance so that editing one calc
+  // session never mutates the module's shared default.
+  if (Array.isArray(def.default)) return def.default.map((row) => ({ ...row }));
+  if (STRUCTURED_TYPES.has(def.type) && def.default && typeof def.default === 'object') return { ...def.default };
   return def.default;
 }
 
@@ -213,7 +308,7 @@ function initialValues(calc, params) {
   calc.inputs.forEach((def) => {
     if (!params.has(def.name)) return;
     const raw = params.get(def.name);
-    if (def.type === 'layers' || def.type === 'phase-picker') {
+    if (STRUCTURED_TYPES.has(def.type)) {
       try { values[def.name] = JSON.parse(raw); } catch { /* keep default on bad payload */ }
     } else if (def.type === 'number') {
       if (raw === '') { values[def.name] = undefined; return; }
@@ -232,7 +327,7 @@ function updateUrl(calc, values) {
   calc.inputs.forEach((def) => {
     const v = values[def.name];
     if (v === undefined || v === null || v === '') return;
-    if (def.type === 'layers' || def.type === 'phase-picker') {
+    if (STRUCTURED_TYPES.has(def.type)) {
       params.set(def.name, JSON.stringify(v));
     } else {
       params.set(def.name, String(v));
@@ -263,6 +358,7 @@ function buildForm(calc, values, onChange) {
 function buildField(def, values, onChange) {
   if (def.type === 'layers') return buildLayersField(def, values, onChange);
   if (def.type === 'phase-picker') return buildPhasePickerField(def, values, onChange);
+  if (def.type === 'vehicle-rows') return buildVehicleRowsField(def, values, onChange);
 
   const field = document.createElement('div');
   field.className = 'field';
@@ -308,6 +404,16 @@ function buildField(def, values, onChange) {
     help.className = 'field-help';
     help.textContent = def.help;
     field.append(help);
+  }
+
+  // Cross-calc value handoff (js/pipe.js) — any field can offer to fetch
+  // its value from another calc's headline result by setting `pipeFrom`
+  // to that calc's id.
+  if (def.pipeFrom) {
+    const producer = registry.find((c) => c.id === def.pipeFrom);
+    const link = buildPipeRequestLink(def.pipeFrom, def.name, `Use output from ${producer ? producer.title : def.pipeFrom} →`);
+    link.className += ' field-help';
+    field.append(link);
   }
 
   const error = document.createElement('div');
@@ -393,6 +499,126 @@ function buildLayersField(def, values, onChange) {
     const last = values[def.name][values[def.name].length - 1];
     const top = last ? last.bottom : 0;
     values[def.name].push({ top, bottom: top + 1, Es: 10 });
+    renderRows();
+    onChange();
+  });
+  field.append(addBtn);
+
+  return field;
+}
+
+// --- Custom field: repeating vehicle-movement rows (haul-road.js) ------------
+// Generic over the vehicle list: reads options from def.vehicleOptions
+// ([{ value, label }]) rather than hard-coding haul-road's own data here.
+
+function buildVehicleRowsField(def, values, onChange) {
+  const field = document.createElement('div');
+  field.className = 'field';
+  field.dataset.fieldFor = def.name;
+
+  const label = document.createElement('label');
+  label.textContent = def.label || def.name;
+  field.append(label);
+
+  if (def.help) {
+    const help = document.createElement('div');
+    help.className = 'field-help';
+    help.textContent = def.help;
+    field.append(help);
+  }
+
+  const table = document.createElement('table');
+  table.className = 'layers-table vehicle-rows-table';
+  table.innerHTML = `<thead><tr>
+    <th>Vehicle</th><th>Passes/day</th><th>Working weeks</th><th>Custom sa</th><th></th>
+  </tr></thead><tbody></tbody>`;
+  field.append(table);
+  const tbody = table.querySelector('tbody');
+
+  function renderRows() {
+    tbody.innerHTML = '';
+    values[def.name].forEach((row, i) => {
+      const tr = document.createElement('tr');
+
+      const tdVeh = document.createElement('td');
+      const select = document.createElement('select');
+      (def.vehicleOptions || []).forEach((opt) => {
+        const o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.label;
+        select.append(o);
+      });
+      select.value = row.vehicleType;
+      select.addEventListener('change', () => {
+        row.vehicleType = select.value;
+        renderRows();
+        onChange();
+      });
+      tdVeh.append(select);
+      tr.append(tdVeh);
+
+      ['passesPerDay', 'workingWeeks'].forEach((key) => {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.step = '1';
+        input.value = row[key] ?? '';
+        input.addEventListener('input', () => {
+          const n = Number(input.value);
+          row[key] = input.value === '' || Number.isNaN(n) ? undefined : n;
+          onChange();
+        });
+        td.append(input);
+        tr.append(td);
+      });
+
+      const tdCustom = document.createElement('td');
+      if (row.vehicleType === 'custom') {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = 'any';
+        input.min = '0';
+        input.value = row.customSa ?? '';
+        input.addEventListener('input', () => {
+          const n = Number(input.value);
+          row.customSa = input.value === '' || Number.isNaN(n) ? undefined : n;
+          onChange();
+        });
+        tdCustom.append(input);
+      } else {
+        tdCustom.textContent = '—';
+        tdCustom.className = 'muted';
+      }
+      tr.append(tdCustom);
+
+      const tdBtn = document.createElement('td');
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn secondary';
+      removeBtn.textContent = '×';
+      removeBtn.setAttribute('aria-label', `Remove vehicle row ${i + 1}`);
+      removeBtn.addEventListener('click', () => {
+        values[def.name].splice(i, 1);
+        renderRows();
+        onChange();
+      });
+      tdBtn.append(removeBtn);
+      tr.append(tdBtn);
+
+      tbody.append(tr);
+    });
+  }
+  renderRows();
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'btn secondary';
+  addBtn.textContent = '+ Add vehicle';
+  addBtn.style.marginTop = '0.5rem';
+  addBtn.addEventListener('click', () => {
+    const firstOption = (def.vehicleOptions || [])[0];
+    values[def.name].push({ vehicleType: firstOption ? firstOption.value : 'custom', passesPerDay: 1, workingWeeks: 1, customSa: undefined });
     renderRows();
     onChange();
   });
@@ -564,7 +790,7 @@ function wireButtons(calc, row, values, getForm, onReset, scheduleRecalc, toast)
 
 // --- Recalculation --------------------------------------------------------------
 
-function recalc(calc, values, resultsPanel, reportFrame, diagramFrame) {
+function recalc(calc, values, resultsPanel, reportFrame, diagramFrame, headerDetails, pipeRequest) {
   let output;
   try {
     output = calc.calculate(values) || {};
@@ -572,7 +798,7 @@ function recalc(calc, values, resultsPanel, reportFrame, diagramFrame) {
     output = { results: [], steps: [], warnings: [`Calculation error: ${err.message}`] };
   }
 
-  renderResults(resultsPanel, output);
+  renderResults(resultsPanel, output, pipeRequest);
 
   if (diagramFrame && calc.diagram) {
     try {
@@ -584,10 +810,10 @@ function recalc(calc, values, resultsPanel, reportFrame, diagramFrame) {
 
   const visibleNames = new Set(calc.inputs.filter((d) => isVisible(d, values)).map((d) => d.name));
   reportFrame.innerHTML = '';
-  reportFrame.append(buildReportSheet(calc, values, output, visibleNames));
+  reportFrame.append(buildReportSheet(calc, values, output, visibleNames, headerDetails));
 }
 
-function renderResults(panel, output) {
+function renderResults(panel, output, pipeRequest) {
   const { results = [], warnings = [], verdict } = output;
   panel.innerHTML = '';
 
@@ -609,6 +835,12 @@ function renderResults(panel, output) {
         grid.append(tile);
       });
       panel.append(grid);
+
+      if (pipeRequest) {
+        const headline = highlighted[0];
+        const sendBtn = buildSendBackButton(pipeRequest, `${headline.symbol || headline.label}`, () => headline.value);
+        panel.append(sendBtn);
+      }
     }
 
     plain.forEach((r) => {

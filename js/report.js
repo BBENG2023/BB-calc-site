@@ -30,56 +30,52 @@ function sectionTitle(n, label) {
   return `<h4 class="rs-section-title"><span class="rs-section-num">${n}</span><span>${escapeHtml(label)}</span></h4>`;
 }
 
+const BB_ADDRESS = 'The Warehouse, Cartmel Drive, Harlescott, Shrewsbury, SY1 3TB';
+const BB_PHONE = '01743 811 811';
+
 /**
  * Build the report-sheet DOM for a calc.
  * @param {object} calc   the calc module definition
  * @param {object} inputs current input values (name -> value)
  * @param {object} output result of calc.calculate(inputs): { results, steps, warnings, verdict }
  * @param {object} visibleInputNames Set of input names currently visible (respecting showIf)
+ * @param {object} headerDetails project/sheet/engineer header fields (see js/header-details.js)
  * @returns {HTMLElement}
  */
-export function buildReportSheet(calc, inputs, output, visibleInputNames) {
+export function buildReportSheet(calc, inputs, output, visibleInputNames, headerDetails = {}) {
   const { results = [], steps = [], warnings = [], verdict } = output || {};
   let sectionNum = 0;
+  const h = headerDetails;
 
   const sheet = el('div', 'report-sheet rs-border');
 
-  // --- Header block: company / logo | project meta ---
+  // --- Row 1: company block (left) + project block (right) ---
   const head = el('div', 'rs-head');
   const headLeft = el('div', 'rs-head-left');
   headLeft.innerHTML = `
-    <img src="assets/logo.svg" alt="" />
-    <div>
-      <div class="rs-company">BEAVER BRIDGES LTD</div>
-      <div class="rs-sub">Engineering Toolkit</div>
+    <img src="assets/logo.png" alt="" />
+    <div class="rs-company-block">
+      <div class="rs-company">Beaver Bridges Ltd</div>
+      <div class="rs-company-addr">${escapeHtml(BB_ADDRESS)}</div>
+      <div class="rs-company-addr">${escapeHtml(BB_PHONE)}</div>
     </div>`;
   const headRight = el('div', 'rs-head-right');
   headRight.innerHTML = `
     <table class="rs-meta-table">
-      <tr><td class="rs-meta-label">Project</td><td class="rs-meta-fill">&nbsp;</td></tr>
-      <tr><td class="rs-meta-label">Ref</td><td class="rs-meta-fill">&nbsp;</td></tr>
-      <tr><td class="rs-meta-label">Rev</td><td class="rs-meta-fill">A</td></tr>
+      <tr><td class="rs-meta-label">Project No</td><td class="rs-meta-fill">${escapeHtml(h.projectNo || '') || '&nbsp;'}</td></tr>
+      <tr><td class="rs-meta-label">Project Title</td><td class="rs-meta-fill">${escapeHtml(h.projectTitle || '') || '&nbsp;'}</td></tr>
+      <tr><td class="rs-meta-label">Sheet No</td><td class="rs-meta-fill">${escapeHtml(h.sheetNo || '') || '&nbsp;'}${h.sheetOf ? ` of ${escapeHtml(h.sheetOf)}` : ''}</td></tr>
+      <tr><td class="rs-meta-label">Date</td><td class="rs-meta-fill">${escapeHtml(h.date || '') || todayUK()}</td></tr>
+      <tr><td class="rs-meta-label">Engineer</td><td class="rs-meta-fill">${escapeHtml(h.engineerInitials || '') || '&nbsp;'}</td></tr>
+      <tr><td class="rs-meta-label">Checked</td><td class="rs-meta-fill">${escapeHtml(h.checkedCategory || '') || '&nbsp;'}</td></tr>
     </table>`;
   head.append(headLeft, headRight);
 
-  // --- Calc meta block: title/id/date | prepared/checked/sheet ---
-  const calcMeta = el('div', 'rs-calc-meta');
-  const metaLeft = el('div');
-  metaLeft.innerHTML = `
-    <div class="rs-calc-title">${escapeHtml(calc.title)}</div>
-    <div>ID: ${escapeHtml(calc.id)} v${escapeHtml(calc.version)}</div>
-    <div>Date: ${todayUK()}</div>`;
-  const metaRight = el('div');
-  metaRight.innerHTML = `
-    <table class="rs-meta-table">
-      <tr><td class="rs-meta-label">Prepared</td><td class="rs-meta-fill">&nbsp;</td></tr>
-      <tr><td class="rs-meta-label">Checked</td><td class="rs-meta-fill">&nbsp;</td></tr>
-      <tr><td class="rs-meta-label">Sheet</td><td class="rs-meta-fill">1 / 1</td></tr>
-    </table>`;
-  calcMeta.append(metaLeft, metaRight);
-
-  // --- Title strip ---
-  const titleBar = el('div', 'rs-title-bar', escapeHtml(calc.title));
+  // --- Row 2: calc title (bold, left) + ID/version (small, right) ---
+  const titleBar = el('div', 'rs-title-bar');
+  titleBar.innerHTML = `
+    <span class="rs-title-main">${escapeHtml(calc.title)}</span>
+    <span class="rs-title-meta">ID: ${escapeHtml(calc.id)} · v${escapeHtml(calc.version)}</span>`;
 
   // --- Body ---
   const body = el('div', 'rs-body');
@@ -111,6 +107,20 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames) {
           <td>Top ${escapeHtml(inputDisplayValue({ type: 'number' }, row.top))} m — Bottom ${escapeHtml(inputDisplayValue({ type: 'number' }, row.bottom))} m</td>
           <td class="num">${escapeHtml(inputDisplayValue({ type: 'number' }, row.Es))}</td>
           <td>MPa</td>`;
+        tbody.append(tr);
+      });
+      return;
+    }
+
+    if (def.type === 'vehicle-rows') {
+      (value || []).forEach((row, i) => {
+        const opt = (def.vehicleOptions || []).find((o) => o.value === row.vehicleType);
+        const tr = el('tr');
+        tr.innerHTML = `
+          <td>Row ${i + 1}</td>
+          <td>${escapeHtml(opt?.label || row.vehicleType)}${row.vehicleType === 'custom' ? ` (sa=${escapeHtml(inputDisplayValue({ type: 'number' }, row.customSa))})` : ''}</td>
+          <td class="num">${escapeHtml(inputDisplayValue({ type: 'number' }, row.passesPerDay))}/day</td>
+          <td>${escapeHtml(inputDisplayValue({ type: 'number' }, row.workingWeeks))} weeks</td>`;
         tbody.append(tr);
       });
       return;
@@ -263,6 +273,6 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames) {
   const footer = el('div', 'rs-footer');
   footer.innerHTML = `<span>Beaver Bridges Ltd | Engineering Toolkit</span><span>Page 1/1</span>`;
 
-  sheet.append(head, calcMeta, titleBar, body, signoff, footer);
+  sheet.append(head, titleBar, body, signoff, footer);
   return sheet;
 }

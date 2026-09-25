@@ -328,6 +328,54 @@ details.info-block li {
   color: var(--bb-primary);
 }
 
+/* --- Header details panel (project no. / sheet / date / engineer) --- */
+
+.header-details-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+@media (min-width: 600px) {
+  .header-details-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* --- Cross-calc pipe handoff --- */
+
+.pipe-notice {
+  background: var(--bb-primary-100);
+  color: var(--bb-primary-800);
+  border-left: 3px solid var(--bb-primary);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.6em 1rem;
+  margin-bottom: 1rem;
+}
+
+a.pipe-link {
+  color: var(--bb-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+a.pipe-link:hover {
+  color: var(--bb-accent);
+}
+
+.pipe-send-btn {
+  margin-top: 0.75rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.pipe-received-note {
+  color: var(--bb-accent-700);
+  font-weight: 700;
+}
+
 /* --- Copy-link toast --- */
 
 .toast {

@@ -4,6 +4,7 @@
 
 import { toRad } from '../js/formatters.js';
 import { svg, soilHatchDef, line, rect, text, arrowHead, hDimension, vDimension, clamp } from '../js/diagrams.js';
+import { bearingCapacityFactors as bearingFactors } from '../js/shared-data.js';
 
 const GAMMA_W = 9.81; // kN/m3
 
@@ -59,19 +60,6 @@ function diagram(v, output) {
   inner += hDimension(footL, footR, footBotY + 78, `B = ${B} m`, { extendFromY: footBotY });
 
   return svg('0 0 400 300', inner, soilHatchDef('bc-hatch'));
-}
-
-function bearingFactors(phiDeg) {
-  const phi = toRad(phiDeg);
-  if (phiDeg <= 0.001) {
-    // Undrained limit (Prandtl/Skempton): Nq -> 1, Nc -> pi + 2, Ngamma -> 0.
-    return { Nq: 1, Nc: Math.PI + 2, Ngamma: 0 };
-  }
-  const tanPhi = Math.tan(phi);
-  const Nq = Math.exp(Math.PI * tanPhi) * Math.pow(Math.tan(Math.PI / 4 + phi / 2), 2);
-  const Nc = (Nq - 1) / tanPhi;
-  const Ngamma = 2 * (Nq - 1) * tanPhi;
-  return { Nq, Nc, Ngamma };
 }
 
 // Effective B'/L' for shape factors. Strip -> 0 (L infinite); square/circular -> 1.
