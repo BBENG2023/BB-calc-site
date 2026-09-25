@@ -1,6 +1,6 @@
 // retaining-wall.js — Cantilever retaining wall stability (overturning,
 // sliding, bearing pressure, middle-third rule). BS EN 1997-1 / PD 6694-1.
-// Simplified preliminary method: active thrust and surcharge thrust are
+// Simplified method: active thrust and surcharge thrust are
 // treated as horizontal forces (β only affects Ka via the sloping-backfill
 // Rankine formula) — see 'assumptions' below.
 
@@ -123,10 +123,10 @@ export default {
     'PD 6694-1:2011 — Recommendations for the design of structures subject to traffic loading (retaining structures for highway works)',
     'UK National Annex to BS EN 1997-1',
   ],
-  description: 'Overturning, sliding, bearing pressure and middle-third checks for a cantilever retaining wall on a spread footing, per EC7 / PD 6694-1 preliminary methods.',
+  description: 'Overturning, sliding, bearing pressure and middle-third checks for a cantilever retaining wall on a spread footing, per EC7 / PD 6694-1 methods.',
   assumptions: [
     'Wall stem has a vertical toe-side face; the heel-side face tapers linearly from tb at the base to tt at the top.',
-    'Active thrust and surcharge thrust are treated as horizontal forces at this preliminary stage — backfill inclination β affects the active pressure coefficient (Rankine sloping-backfill formula) but not the direction of the resultant thrust.',
+    'Active thrust and surcharge thrust are treated as horizontal forces in this implementation — backfill inclination β affects the active pressure coefficient (Rankine sloping-backfill formula) but not the direction of the resultant thrust.',
     'Soil over the heel is taken as a rectangular block of height H (ground level at top of stem); the additional wedge weight from a sloping backfill surface is not separately included — for significant slopes, verify with a full wedge or slip-surface analysis.',
     'Passive resistance Pp is a direct input (kN/m run); this tool does not derive it from a passive pressure coefficient, and by default assumes it may not be reliably present (e.g. future excavation in front of the wall) unless the engineer confirms otherwise.',
     'No seismic, no dynamic/traffic surcharge amplification, no wall friction on the virtual back face.',
@@ -148,7 +148,7 @@ export default {
     { name: 'qa', label: 'Allowable bearing pressure', type: 'number', unit: 'kPa', default: 200, min: 10, step: 5 },
     { name: 'mu', label: 'Base friction coefficient μ', type: 'number', default: 0.45, min: 0.1, max: 0.9, step: 0.01 },
     { name: 'Pp', label: 'Passive resistance Pp', type: 'number', unit: 'kN/m', default: 0, min: 0, step: 1,
-      help: 'Enter 0 to ignore passive resistance (common for a conservative preliminary check).' },
+      help: 'Enter 0 to ignore passive resistance (common for a conservative check).' },
     { name: 'gammac', label: 'Concrete unit weight γc', type: 'number', unit: 'kN/m³', default: 24, min: 20, max: 26, step: 0.5 },
   ],
   diagram,

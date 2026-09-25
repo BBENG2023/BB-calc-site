@@ -3,6 +3,57 @@
 // footed base. `qp_kPa` can be typed in directly or piped in from the
 // Wind Pressure calc (js/pipe.js) via the "Use output from..." link.
 
+import { svg, line, rect, text, arrowHead, hDimension, vDimension, clamp } from '../js/diagrams.js';
+
+// Panel elevation: mesh panel, foot, wind arrow at its lever-arm height,
+// the downwind pivot point the overturning check is taken about, and any
+// ballast sitting on the foot.
+function diagram(v, output) {
+  const results = output?.results || [];
+  const get = (sym) => results.find((r) => r.symbol === sym)?.value;
+  const Fw = get('Fw');
+
+  const groundY = 240;
+  const kv = clamp(150 / (v.fenceHeight || 2), 40, 100);
+  const panelHpx = (v.fenceHeight || 2) * kv;
+  const feetHpx = clamp((v.feetHeight || 0.135) * kv, 4, 20);
+  const feetLpx = clamp((v.feetLength || 0.75) * kv * 1.3, 60, 200);
+  const panelTopY = groundY - feetHpx - panelHpx;
+  const cx = 210;
+
+  let inner = '';
+  inner += line(20, groundY, 380, groundY, { color: 'var(--bb-primary)', width: 1.5 });
+
+  inner += rect(cx - feetLpx / 2, groundY - feetHpx, feetLpx, feetHpx, { fill: 'var(--bb-primary-400)', stroke: 'var(--bb-primary-900)' });
+
+  const panelWpx = 8;
+  inner += rect(cx - panelWpx / 2, panelTopY, panelWpx, panelHpx, { fill: 'var(--bb-primary-200)', stroke: 'var(--bb-primary-700)' });
+  for (let i = 1; i < 4; i++) {
+    const y = panelTopY + (panelHpx * i) / 4;
+    inner += line(cx - panelWpx / 2, y, cx + panelWpx / 2, y, { color: 'var(--bb-primary-700)', width: 0.5 });
+  }
+
+  const armY = groundY - ((v.fenceHeight || 2) / 2 + (v.feetHeight || 0.135)) * kv;
+  inner += line(cx - 90, armY, cx - 10, armY, { color: 'var(--bb-accent)', width: 3 });
+  inner += arrowHead(cx - 8, armY, 'right', { color: 'var(--bb-accent)' });
+  inner += text(cx - 95, armY - 6, `Fw${Fw !== undefined ? ` = ${Fw.toFixed(2)} kN` : ''}`, { size: 9, weight: 800, color: 'var(--bb-accent-700)', anchor: 'end' });
+
+  const pivotX = cx + feetLpx / 2;
+  inner += `<circle cx="${pivotX}" cy="${groundY}" r="4" style="fill:var(--bb-primary-900)" />`;
+  inner += text(pivotX + 8, groundY + 4, 'PIVOT', { size: 7, weight: 700, color: 'var(--bb-primary-700)', anchor: 'start' });
+
+  const ballast = v.ballastKerbs === 'Yes' ? (v.ballastMass_kg_per_panel || 0) : 0;
+  if (ballast > 0) {
+    inner += rect(cx - feetLpx / 2 + 6, groundY - feetHpx - 10, feetLpx - 12, 10, { fill: 'var(--bb-ink)', stroke: 'var(--bb-primary-900)' });
+    inner += text(cx, groundY - feetHpx - 14, `+${ballast.toFixed(0)} kg ballast`, { size: 7, weight: 700, color: 'var(--bb-ink)' });
+  }
+
+  inner += vDimension(cx - panelWpx / 2 - 24, panelTopY, groundY - feetHpx, `H = ${v.fenceHeight} m`, { extendToX: cx - panelWpx / 2 });
+  inner += hDimension(cx - feetLpx / 2, cx + feetLpx / 2, groundY + 26, `foot = ${v.feetLength} m`, { extendFromY: groundY });
+
+  return svg('0 0 400 300', inner);
+}
+
 export default {
   id: 'heras-fencing',
   title: 'Heras Fencing — Wind Load & Stability',
@@ -43,6 +94,7 @@ export default {
       showIf: (v) => v.ballastKerbs === 'Yes' },
     { name: 'frictionCoeff_mu', label: 'Feet-to-ground friction μ', type: 'number', default: 0.5, min: 0.1, max: 1, step: 0.05 },
   ],
+  diagram,
   calculate: (v) => {
     const results = [];
     const steps = [];

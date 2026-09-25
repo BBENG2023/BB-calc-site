@@ -47,7 +47,7 @@ export default {
   // Auto-generates the input form, in the order given. Each entry:
   //   name      — key used in the values object passed to calculate()
   //   label     — human-readable label
-  //   type      — 'number' | 'select'
+  //   type      — 'number' | 'select' | 'text'
   //   unit      — optional, shown next to the label and in the report table
   //   default   — required; pre-fills the form and is used by "Reset"
   //   min/max   — optional validation bounds (number type only)
@@ -64,12 +64,14 @@ export default {
       help: 'Only used for shape B.' },
   ],
 
-  // Optional. (values, output) => SVG markup string. Rendered live in a
-  // "Definition diagram" panel on the calc page and in the printed
+  // Every calc should have one — see CONTRIBUTING.md. (values, output)
+  // => SVG markup string. Rendered live in a "Definition diagram" panel
+  // on the calc page (must respond to the actual input values — check it
+  // at more than one set of inputs before shipping) and in the printed
   // report's "Method & assumptions" section — see js/diagrams.js for the
   // drawing helpers (line, rect, text, arrowHead, hDimension, vDimension,
-  // soilHatchDef) and bearing-capacity.js / retaining-wall.js /
-  // schmertmann-settlement.js / phase-relations.js for worked examples.
+  // soilHatchDef, craneSilhouette, pilingRigSilhouette) and any file in
+  // /calcs/ for a worked example.
   // Keep it schematic (proportionally clamped, captioned "not to scale")
   // rather than a literal scale drawing, and reference colours via
   // `style="fill:var(--bb-primary)"` etc. so it stays on-brand for free.

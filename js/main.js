@@ -383,6 +383,11 @@ function buildField(def, values, onChange) {
       input.append(o);
     });
     input.value = values[def.name] ?? def.default;
+  } else if (def.type === 'text') {
+    input = document.createElement('input');
+    input.type = 'text';
+    input.value = values[def.name] ?? '';
+    if (def.placeholder) input.placeholder = def.placeholder;
   } else {
     input = document.createElement('input');
     input.type = 'number';
@@ -709,7 +714,7 @@ function wireForm(calc, form, values, onChange) {
     const def = calc.inputs.find((d) => d.name === target.name);
     if (!def) return;
 
-    if (def.type === 'select') {
+    if (def.type === 'select' || def.type === 'text') {
       values[def.name] = target.value;
     } else if (target.value === '') {
       values[def.name] = undefined;

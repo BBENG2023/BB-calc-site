@@ -1,6 +1,56 @@
 // haul-road.js — Haul road / ramped HGV access design: unbound granular
 // sub-base thickness from equivalent standard-axle traffic loading.
 
+import { svg, soilHatchDef, line, rect, text, vDimension, clamp } from '../js/diagrams.js';
+
+// Cross-section: subgrade, sub-base of thickness h_required, an optional
+// asphalt cap, an optional geogrid line, and a schematic wheel load on top.
+function diagram(v, output) {
+  const results = output?.results || [];
+  const get = (sym) => results.find((r) => r.symbol === sym)?.value;
+  const hReq = get('h_required') ?? 300;
+
+  const groundY = 210;
+  const hPx = clamp((hReq / 1000) * 320, 20, 130);
+  const subbaseTopY = groundY - hPx;
+  const cx = 200;
+
+  let inner = '';
+  inner += `<rect x="10" y="${groundY}" width="380" height="${300 - groundY}" style="fill:var(--bb-primary-100)" />`;
+  inner += `<rect x="10" y="${groundY}" width="380" height="${300 - groundY}" fill="url(#hr-hatch)" />`;
+  inner += line(10, groundY, 390, groundY, { color: 'var(--bb-primary)', width: 1.5 });
+  inner += text(14, groundY + 16, 'SUBGRADE', { size: 8, weight: 700, color: 'var(--bb-primary-500)', anchor: 'start', ls: '0.05em' });
+
+  inner += rect(30, subbaseTopY, 340, hPx, { fill: 'var(--bb-primary-200)', stroke: 'var(--bb-primary-700)' });
+  inner += text(cx, subbaseTopY + 16, 'GRANULAR SUB-BASE', { size: 8, weight: 700, color: 'var(--bb-primary-700)', ls: '0.05em' });
+
+  let topY = subbaseTopY;
+  if (v.includeAsphaltCap === 'Yes') {
+    const capPx = clamp(((v.dcap || 30) / 1000) * 320, 5, 18);
+    const capTopY = subbaseTopY - capPx;
+    inner += rect(30, capTopY, 340, capPx, { fill: 'var(--bb-ink)', stroke: 'var(--bb-primary-900)' });
+    topY = capTopY;
+  }
+
+  if (v.includeGeogrid === 'Yes') {
+    const geogridY = groundY - Math.min((350 / 1000) * 320, hPx);
+    inner += line(30, geogridY, 370, geogridY, { color: 'var(--bb-accent)', width: 2, dash: '5 3' });
+    inner += text(cx, geogridY - 5, 'GEOGRID', { size: 7.5, weight: 700, color: 'var(--bb-accent-700)' });
+  }
+
+  // Wheel-pair load schematic
+  [cx - 45, cx + 45].forEach((wx) => {
+    inner += `<circle cx="${wx}" cy="${topY - 15}" r="15" style="fill:var(--bb-ink);stroke:var(--bb-primary-900)" />`;
+    inner += `<circle cx="${wx}" cy="${topY - 15}" r="5" style="fill:var(--bb-primary-200)" />`;
+  });
+  inner += rect(cx - 60, topY - 46, 120, 20, { fill: 'var(--bb-accent)', stroke: 'var(--bb-accent-700)' });
+  inner += text(cx, topY - 52, 'HGV WHEEL LOAD', { size: 7.5, weight: 700, color: 'var(--bb-accent-700)' });
+
+  inner += vDimension(50, subbaseTopY, groundY, `h = ${hReq.toFixed(0)} mm`, { extendToX: 30 });
+
+  return svg('0 0 400 300', inner, soilHatchDef('hr-hatch'));
+}
+
 // sa (standard axles per pass) per vehicle type — ICE Temporary Works
 // (2012) Table 5.1. 'custom' rows use the engineer's own value instead.
 export const HAUL_ROAD_VEHICLES = {
@@ -68,6 +118,7 @@ export default {
     { name: 'rutDepth_mm', label: 'Design rut depth', type: 'select', options: ['75', '40'], default: '75',
       help: '75 mm = temporary road, 40 mm = permanent foundation.' },
   ],
+  diagram,
   calculate: (v) => {
     const results = [];
     const steps = [];

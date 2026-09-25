@@ -4,6 +4,7 @@
 
 import { toRad, toDeg } from '../js/formatters.js';
 import { bearingCapacityFactors, EC7_PARTIAL_FACTORS } from '../js/shared-data.js';
+import { svg, soilHatchDef, line, rect, text, hDimension, vDimension, clamp } from '../js/diagrams.js';
 
 const GAMMA_C_CONCRETE = 1.5; // EC2 persistent/transient partial factor for concrete
 
@@ -16,6 +17,49 @@ const CONCRETE_CLASSES = {
 function fctmFrom(fck) {
   // EC2 §3.1.2 Table 3.1 note, valid for fck ≤ 50 MPa.
   return 0.30 * Math.pow(fck, 2 / 3);
+}
+
+// Trench cross-section: ground either side of the trench, the service
+// (circle) at its crown depth, the slab spanning support-to-support over
+// it (soffit assumed to sit at embedment_m below GL — see Assumptions),
+// and a wheel-pair load on top.
+function diagram(v) {
+  const groundY = 55;
+  const kv = clamp(170 / (v.serviceCrown_m + v.serviceOD_m + 1), 20, 60);
+  const slabSoffitY = groundY + v.embedment_m * kv;
+  const slabTopY = slabSoffitY - v.slabThickness_m * kv;
+  const halfSpanPx = clamp((v.slabLength_m / 2) * kv * 1.3, 55, 165);
+  const cx = 200;
+
+  let inner = '';
+  inner += line(20, groundY, 380, groundY, { color: 'var(--bb-primary)', width: 1.5 });
+  inner += text(24, groundY - 6, 'GROUND LEVEL', { size: 8, weight: 700, color: 'var(--bb-primary-500)', anchor: 'start', ls: '0.05em' });
+
+  const trenchHalfW = clamp((v.serviceOD_m / 2 + 0.3) * kv, 20, 60);
+  inner += rect(20, groundY, cx - trenchHalfW - 20, 245 - groundY, { fill: 'var(--bb-primary-100)', stroke: 'none' });
+  inner += `<rect x="20" y="${groundY}" width="${cx - trenchHalfW - 20}" height="${245 - groundY}" fill="url(#sps-hatch)" />`;
+  inner += rect(cx + trenchHalfW, groundY, 380 - (cx + trenchHalfW), 245 - groundY, { fill: 'var(--bb-primary-100)', stroke: 'none' });
+  inner += `<rect x="${cx + trenchHalfW}" y="${groundY}" width="${380 - (cx + trenchHalfW)}" height="${245 - groundY}" fill="url(#sps-hatch)" />`;
+
+  inner += rect(cx - halfSpanPx, slabTopY, halfSpanPx * 2, slabSoffitY - slabTopY, { fill: 'var(--bb-primary)', stroke: 'var(--bb-primary-900)' });
+  inner += text(cx, (slabTopY + slabSoffitY) / 2 + 3, 'PROTECTION SLAB', { size: 8, weight: 700, color: '#fff', ls: '0.05em' });
+
+  const serviceCenterY = groundY + (v.serviceCrown_m + v.serviceOD_m / 2) * kv;
+  const serviceRpx = clamp((v.serviceOD_m / 2) * kv, 8, 40);
+  inner += `<circle cx="${cx}" cy="${serviceCenterY}" r="${serviceRpx}" style="fill:var(--bb-accent-200);stroke:var(--bb-accent-700);stroke-width:1.5" />`;
+  inner += text(cx, serviceCenterY + 3, 'SERVICE', { size: 7, weight: 700, color: 'var(--bb-accent-900)' });
+
+  [cx - 30, cx + 30].forEach((wx) => {
+    inner += `<circle cx="${wx}" cy="${slabTopY - 14}" r="14" style="fill:var(--bb-ink);stroke:var(--bb-primary-900)" />`;
+    inner += `<circle cx="${wx}" cy="${slabTopY - 14}" r="5" style="fill:var(--bb-primary-200)" />`;
+  });
+  inner += rect(cx - 45, slabTopY - 40, 90, 18, { fill: 'var(--bb-accent)', stroke: 'var(--bb-accent-700)' });
+
+  inner += hDimension(cx - halfSpanPx, cx + halfSpanPx, serviceCenterY + serviceRpx + 30, `L = ${v.slabLength_m} m`, { extendFromY: slabSoffitY });
+  inner += vDimension(cx + halfSpanPx + 22, slabTopY, slabSoffitY, `t = ${(v.slabThickness_m * 1000).toFixed(0)} mm`, { extendToX: cx + halfSpanPx });
+  inner += vDimension(cx - halfSpanPx - 44, groundY, serviceCenterY - serviceRpx, `crown = ${v.serviceCrown_m} m`, { extendToX: cx - trenchHalfW });
+
+  return svg('0 0 400 300', inner, soilHatchDef('sps-hatch'));
 }
 
 export default {
@@ -31,9 +75,9 @@ export default {
   ],
   description: 'Bending, shear (EC2) and bearing (EC7) checks for a reinforced concrete slab spanning across a buried service trench, protecting the service from tracked plant or HGV imposed loads.',
   assumptions: [
-    'Simply-supported one-way span across the trench, checked per metre width, under a blanket UDL equal to the (factored) track contact pressure over the full span — no load dispersal or line-load/patch-load modelling. This is a deliberately simple, conservative-by-overload preliminary model; a load spread through the slab thickness to the actual track footprint would give a smaller design moment/shear.',
+    'Simply-supported one-way span across the trench, checked per metre width, under a blanket UDL equal to the (factored) track contact pressure over the full span — no load dispersal or line-load/patch-load modelling. This is a deliberately simple, conservative-by-overload simplified model; a load spread through the slab thickness to the actual track footprint would give a smaller design moment/shear.',
     'No explicit support (bearing strip) width was specified in the build brief — this tool assumes the slab bears directly on the ground either side of the trench over a width equal to the slab thickness. State the actual support detail and re-check if different.',
-    'EC7 DA1-C2 bearing check reuses the same (structural-ULS-factored) shear reaction as the applied bearing load, rather than recomputing it with DA1-C2\'s own action factors (1.0G + 1.3Q) — a simplification for this preliminary tool.',
+    'EC7 DA1-C2 bearing check reuses the same (structural-ULS-factored) shear reaction as the applied bearing load, rather than recomputing it with DA1-C2\'s own action factors (1.0G + 1.3Q) — a simplification in this implementation.',
     'Minimum cover, bar lap/anchorage, and punching shear directly under a track pad are not checked here.',
   ],
   inputs: [
@@ -61,6 +105,7 @@ export default {
     { name: 'soilSPT_N', label: 'Subgrade SPT N (reporting only)', type: 'number', default: 8, min: 0, step: 1 },
     { name: 'embedment_m', label: 'Depth of slab bearing edge below GL', type: 'number', unit: 'm', default: 0.7, min: 0, step: 0.05 },
   ],
+  diagram,
   calculate: (v) => {
     const results = [];
     const steps = [];

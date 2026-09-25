@@ -1,6 +1,6 @@
 # Beaver Bridges — Engineering Toolkit
 
-A static website hosting a growing library of preliminary engineering
+A static website hosting a growing library of engineering design
 calculation tools for the internal engineering team at Beaver Bridges Ltd.
 
 Plain HTML + CSS + vanilla JavaScript (ES modules). No build step, no
@@ -15,9 +15,10 @@ framework, no server, no database. Deploys straight to GitHub Pages.
 
 ## Who this is for
 
-Beaver Bridges engineers doing early-stage concept optioneering on
+Beaver Bridges engineers deriving design calculation information for
 substructure, geotechnical and temporary works elements — quick,
-consistent, checkable preliminary calculations, not final design.
+consistent, checkable working. Every calculation must be independently
+reviewed and signed off by a Chartered Engineer before it is accepted.
 
 ## Running locally
 
@@ -96,6 +97,21 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.2.0** — Every calc now has a live, parametric "Definition diagram"
+  (all ten calcs, up from four). Split the combined piling mat/crane
+  platform calc into two separate calcs — **Piling Mat Design to BRE
+  470** and **Crane Pad Design to BRE 470** — each with its own plant
+  identification fields (rig/crane make-model, mass or capacity, mast
+  height or boom length/angle) and a diagram showing that specific piece
+  of plant (piling rig or crane) sitting on the platform. The shared BRE
+  470 punching-shear computation moved to `js/bre470-platform.js` so the
+  two calcs can't drift apart. Added a `text` input type to the form
+  generator (for the new plant-description fields). Replaced the real
+  Beaver Bridges logo (was a placeholder). Corrected the site's framing:
+  this toolkit produces design calculation information for direct
+  engineering use, not "concept optioneering only" sketches — every
+  output still requires independent review and sign-off by a Chartered
+  Engineer before acceptance, which hasn't changed and isn't optional.
 - **v1.1.0** — Added `js/shared-data.js` (shared engineering data/formula
   module); refactored `bearing-capacity.js` to source its bearing
   capacity factors from it (validated unchanged). Redesigned the printed
@@ -121,11 +137,11 @@ this repo has a remote to file them against.
 
 ## Disclaimer
 
-**PRELIMINARY — FOR CONCEPT OPTIONEERING ONLY.** Every output from this
-toolkit is advisory and must be independently verified and signed off by a
-Chartered Engineer (CEng MICE / MIStructE) before use in tender,
-fabrication, or construction. All designs must be checked against the
-current Eurocodes with UK National Annexes and the applicable DMRB /
+**DESIGN OUTPUT — REQUIRES CEng REVIEW BEFORE ACCEPTANCE.** Every output
+from this toolkit is advisory and must be independently verified and
+signed off by a Chartered Engineer (CEng MICE / MIStructE) before use in
+tender, fabrication, or construction. All designs must be checked against
+the current Eurocodes with UK National Annexes and the applicable DMRB /
 Network Rail / client-specific standards. CDM 2015 design responsibilities
 apply.
 

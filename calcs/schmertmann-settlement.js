@@ -138,7 +138,7 @@ export default {
   assumptions: [
     'Applies to granular (predominantly drained, non-cohesive) soils; not appropriate for consolidation settlement of clays.',
     'Layer depths are measured from founding level, not from ground level.',
-    'A single representative bulk unit weight applies both above and below founding level for the effective-stress profile (reduced for buoyancy below the water table); this is a simplification for preliminary use — refine with per-layer unit weights for detailed design.',
+    'A single representative bulk unit weight applies both above and below founding level for the effective-stress profile (reduced for buoyancy below the water table); this is a simplification — refine with per-layer unit weights if greater precision is needed.',
     'Depth of influence and peak-influence depth follow the axisymmetric (square/circular) profile when L/B ≤ 2, and the plane-strain (strip) profile otherwise.',
   ],
   inputs: [

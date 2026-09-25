@@ -19,6 +19,8 @@
 // calculation, verified by a Chartered engineer — this matters especially
 // because Heras Fencing (heras-fencing.js) can consume qp(z) directly.
 
+import { svg, soilHatchDef, line, rect, text, arrowHead, vDimension, clamp } from '../js/diagrams.js';
+
 const K_TURBULENCE = 1.0; // UK NA turbulence factor kI
 const Z0_II = 0.05; // reference terrain category II roughness length, m
 
@@ -74,6 +76,52 @@ function cseasonFactor(endMonth, durationMonths) {
   return Math.max(0.8, 1 + base * durationScale);
 }
 
+// Terrain + a schematic wind velocity profile that grows with height
+// (longer arrows = higher speed), the structure at height z, and qp(z)
+// labelled at the top. Height is capped at 30 m for drawing so a tall z
+// doesn't collapse the rest of the figure.
+function diagram(v, output) {
+  const results = output?.results || [];
+  const get = (sym) => results.find((r) => r.symbol === sym)?.value;
+  const qp = get('qp_kPa');
+  const z = v.z || 5;
+
+  const groundY = 260;
+  const maxDrawZ = clamp(z * 2.5, 8, 30); // scales to the input height so short structures aren't lost in a fixed 30 m frame
+  const zDraw = clamp(z, 0.5, maxDrawZ);
+  const kv = 200 / maxDrawZ;
+  const zPx = zDraw * kv;
+  const structTopY = groundY - zPx;
+  const cx = 260;
+
+  let inner = '';
+  inner += `<rect x="10" y="${groundY}" width="380" height="${300 - groundY}" style="fill:var(--bb-primary-100)" />`;
+  inner += `<rect x="10" y="${groundY}" width="380" height="${300 - groundY}" fill="url(#wp-hatch)" />`;
+  inner += line(10, groundY, 390, groundY, { color: 'var(--bb-primary)', width: 2 });
+  inner += text(14, groundY + 16, v.terrainCategory === 'Town' ? 'TOWN TERRAIN' : 'SEA/COUNTRY TERRAIN', { size: 8, weight: 700, color: 'var(--bb-primary-500)', anchor: 'start', ls: '0.05em' });
+
+  inner += rect(cx - 9, structTopY, 18, zPx, { fill: 'var(--bb-primary)', stroke: 'var(--bb-primary-900)' });
+
+  const profileTopPx = Math.max(zPx * 1.15, 40);
+  const nArrows = 6;
+  for (let i = 1; i <= nArrows; i++) {
+    const frac = i / nArrows;
+    const y = groundY - frac * profileTopPx;
+    const len = 20 + frac * 90;
+    inner += line(60, y, 60 + len, y, { color: 'var(--bb-accent)', width: 2 });
+    inner += arrowHead(60 + len, y, 'right', { size: 5, color: 'var(--bb-accent)' });
+  }
+  inner += text(64, groundY - profileTopPx - 10, 'WIND VELOCITY PROFILE', { size: 7.5, weight: 700, color: 'var(--bb-accent-700)', anchor: 'start' });
+
+  inner += vDimension(cx + 32, structTopY, groundY, `z = ${z} m`, { extendToX: cx + 9 });
+
+  if (qp !== undefined) {
+    inner += text(cx, 20, `qp(z) = ${qp.toFixed(3)} kPa`, { size: 10, weight: 800, color: 'var(--bb-primary-700)' });
+  }
+
+  return svg('0 0 400 300', inner, soilHatchDef('wp-hatch'));
+}
+
 export default {
   id: 'wind-pressure-ec1',
   title: 'Wind Pressure to BS EN 1991-1-4',
@@ -110,6 +158,7 @@ export default {
     { name: 'cdir', label: 'Directional factor Cdir', type: 'number', default: 1.0, min: 0.7, max: 1.0, step: 0.01 },
     { name: 'rho_air', label: 'Air density ρ', type: 'number', unit: 'kg/m³', default: 1.226, min: 1.0, max: 1.3, step: 0.001 },
   ],
+  diagram,
   calculate: (v) => {
     const results = [];
     const steps = [];

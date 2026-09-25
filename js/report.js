@@ -248,8 +248,8 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames, header
   // Sign-off block
   const signoff = el('div', 'rs-signoff');
   const signoffStatement = el('div', 'rs-signoff-statement');
-  signoffStatement.innerHTML = `<strong>PRELIMINARY — REQUIRES INDEPENDENT VERIFICATION AND SIGN-OFF</strong> BY A
-    CHARTERED ENGINEER (CEng MICE / MIStructE) PRIOR TO USE FOR
+  signoffStatement.innerHTML = `<strong>DESIGN OUTPUT — REQUIRES INDEPENDENT VERIFICATION AND SIGN-OFF</strong> BY A
+    CHARTERED ENGINEER (CEng MICE / MIStructE) PRIOR TO ACCEPTANCE FOR
     FABRICATION, CONSTRUCTION OR TENDER.`;
   const signoffRows = el('div', 'rs-signoff-rows');
   signoffRows.innerHTML = `

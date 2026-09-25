@@ -13,7 +13,7 @@
 // These are schematic, proportionally-clamped diagrams — a visual aid for
 // checking the geometry makes sense at a glance, not a scaled drawing.
 // That scope note is deliberate: a true to-scale CAD-quality figure is
-// beyond what a preliminary calc tool should promise, and every diagram
+// beyond what this toolkit's schematic diagrams are meant to provide, and every diagram
 // carries a caption saying so.
 
 export function svg(viewBox, inner, extraDefs = '') {
@@ -89,3 +89,60 @@ export function vDimension(x, yTop, yBottom, label, opts = {}) {
 }
 
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// --- Plant silhouettes (schematic, not to scale) -----------------------
+// Shared by piling-mat-bre470.js and crane-pad-bre470.js so the two
+// calcs' diagrams read as clearly different pieces of plant sitting on
+// the same platform build-up. `baseX` is the plant's centreline, `baseY`
+// the level it stands on (top of platform / ground line).
+
+// Schematic crawler crane: tracks, carrier, counterweight/cab, and a
+// boom at `boomAngleDeg` from horizontal, `boomLengthPx` long, with a
+// hook at the tip.
+export function craneSilhouette(baseX, baseY, opts = {}) {
+  const {
+    trackWidthPx = 90, carrierHeightPx = 26, cabWidthPx = 34, cabHeightPx = 30,
+    boomAngleDeg = 60, boomLengthPx = 140,
+    color = 'var(--bb-primary)', accent = 'var(--bb-primary-700)',
+  } = opts;
+  const left = baseX - trackWidthPx / 2;
+  const carrierTopY = baseY - carrierHeightPx;
+
+  let out = '';
+  out += rect(left, baseY - 10, trackWidthPx, 10, { fill: color, stroke: 'var(--bb-primary-900)' });
+  out += rect(left + 6, carrierTopY, trackWidthPx - 12, carrierHeightPx - 10, { fill: color, stroke: 'var(--bb-primary-900)' });
+  out += rect(left + trackWidthPx - cabWidthPx - 4, carrierTopY - cabHeightPx + 10, cabWidthPx, cabHeightPx, { fill: accent, stroke: 'var(--bb-primary-900)' });
+
+  const pivotX = left + 14;
+  const pivotY = carrierTopY + 4;
+  const rad = (boomAngleDeg * Math.PI) / 180;
+  const tipX = pivotX + boomLengthPx * Math.cos(rad);
+  const tipY = pivotY - boomLengthPx * Math.sin(rad);
+  out += line(pivotX, pivotY, tipX, tipY, { color: accent, width: 3 });
+  out += line(tipX, tipY, tipX, tipY + 14, { color: accent, width: 1.5 });
+  out += `<circle cx="${tipX}" cy="${tipY + 18}" r="3" style="fill:none;stroke:${accent};stroke-width:1.5" />`;
+  return out;
+}
+
+// Schematic piling rig: tracks, carrier, a vertical mast/leader with a
+// rig head partway up, and a kelly-bar/auger stub running to ground.
+export function pilingRigSilhouette(baseX, baseY, opts = {}) {
+  const {
+    trackWidthPx = 90, carrierHeightPx = 26, mastHeightPx = 160, mastWidthPx = 10,
+    color = 'var(--bb-primary)', accent = 'var(--bb-primary-700)',
+  } = opts;
+  const left = baseX - trackWidthPx / 2;
+  const carrierTopY = baseY - carrierHeightPx;
+
+  let out = '';
+  out += rect(left, baseY - 10, trackWidthPx, 10, { fill: color, stroke: 'var(--bb-primary-900)' });
+  out += rect(left + 6, carrierTopY, trackWidthPx - 12, carrierHeightPx - 10, { fill: color, stroke: 'var(--bb-primary-900)' });
+
+  const mastX = baseX - mastWidthPx / 2 + trackWidthPx * 0.12;
+  const mastTopY = carrierTopY - mastHeightPx;
+  out += rect(mastX, mastTopY, mastWidthPx, mastHeightPx, { fill: accent, stroke: 'var(--bb-primary-900)' });
+  const headY = carrierTopY - mastHeightPx * 0.72;
+  out += rect(mastX - 7, headY, mastWidthPx + 14, 14, { fill: 'var(--bb-accent)', stroke: 'var(--bb-primary-900)' });
+  out += line(mastX + mastWidthPx / 2, headY + 14, mastX + mastWidthPx / 2, baseY, { color: accent, width: 2, dash: '2 2' });
+  return out;
+}

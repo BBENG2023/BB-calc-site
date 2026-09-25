@@ -20,6 +20,7 @@ layout, routing, or CSS.
      phaseRelations,
      haulRoad,
      pilingMatBre470,
+     cranePadBre470,
      windPressureEc1,
      herasFencing,
      serviceProtectionSlab,
@@ -86,7 +87,9 @@ export default {
   different calc or a manual override by the checking engineer.
 
 - **`inputs`** — drives the auto-generated form. Standard entries use
-  `type: 'number'` or `type: 'select'`:
+  `type: 'number'`, `type: 'select'`, or `type: 'text'` (for a free-text
+  field like a plant description — see `piling-mat-bre470.js`'s
+  `rigDescription`):
 
   ```js
   { name: 'Gs', label: 'Specific gravity of solids', type: 'number',
@@ -97,9 +100,12 @@ export default {
   - `name` — key used in the `values` object passed to `calculate()`.
   - `label` — human-readable label.
   - `unit` — optional, shown next to the label and in the report table.
-  - `default` — required; pre-fills the form and is restored by "Reset".
+  - `default` — required; pre-fills the form and is restored by "Reset"
+    (`''` for a `text` field).
   - `min` / `max` / `step` — optional validation bounds (number type).
   - `options` — required for `type: 'select'`.
+  - `pipeFrom` — optional, `number` type only; see the `_pipe` pattern
+    below.
   - `showIf` — optional `(values) => boolean`; hides the field when false.
   - `help` — optional short helper line under the field.
 
@@ -121,21 +127,34 @@ export default {
   than overloading `number`/`select` — see the "Adding a new custom field
   type" section below.
 
-- **`diagram(v, output)`** — optional. Returns an SVG markup string built
-  with the helpers in `js/diagrams.js` (`svg`, `line`, `rect`, `text`,
-  `arrowHead`, `hDimension`, `vDimension`, `soilHatchDef`, `clamp`). When
-  present it renders in a live "Definition diagram" panel on the calc page
-  (updating on every recalculation) and in the printed report's "Method &
-  assumptions" section, two-up alongside the assumptions bullets. All four
-  shipped calcs have one — `bearing-capacity.js` for a straightforward
-  section-through-a-footing example, `schmertmann-settlement.js` for a
-  more involved one (the classic Iz-vs-depth strain-influence figure).
-  Keep it schematic and proportionally clamped rather than literally to
-  scale — every diagram carries a "not to scale" caption — and reference
-  colours via inline style (`style="fill:var(--bb-primary)"`) rather than
-  hard-coded hex so it stays on-brand if the tokens in `css/base.css` ever
-  change. It's optional: a calc with no `diagram` field simply shows no
-  diagram panel and the report's assumptions render as a single column.
+- **`diagram(v, output)`** — every calc should have one; treat it as a
+  required part of the contract, not a nice-to-have. Returns an SVG
+  markup string built with the helpers in `js/diagrams.js` (`svg`,
+  `line`, `rect`, `text`, `arrowHead`, `hDimension`, `vDimension`,
+  `soilHatchDef`, `clamp`, plus `craneSilhouette` / `pilingRigSilhouette`
+  for plant-based calcs). It renders in a live "Definition diagram" panel
+  on the calc page — updating on every recalculation, so it must respond
+  to the calc's actual input values, not just show a static picture — and
+  in the printed report's "Method & assumptions" section, two-up
+  alongside the assumptions bullets. Every shipped calc has one:
+  `bearing-capacity.js` for a straightforward section-through-a-footing
+  example, `schmertmann-settlement.js` for a more involved one (the
+  classic Iz-vs-depth strain-influence figure), `crane-pad-bre470.js` /
+  `piling-mat-bre470.js` for drawing the actual piece of plant (crane or
+  rig) sitting on the platform, sized from the calc's own track-geometry
+  inputs. Keep it schematic and proportionally clamped rather than
+  literally to scale — every diagram carries a "not to scale" caption —
+  and reference colours via inline style
+  (`style="fill:var(--bb-primary)"`) rather than hard-coded hex so it
+  stays on-brand if the tokens in `css/base.css` ever change. Before
+  shipping a new diagram, actually look at it rendered (`test.html`
+  doesn't check diagrams — open the calc page itself) at a couple of
+  different input combinations; label placement that looks fine at one
+  set of dimensions can silently overlap another (see the several
+  label-collision fixes in this codebase's own history for why this
+  matters). A calc with no `diagram` field simply shows no diagram panel
+  and the report's assumptions render as a single column — acceptable
+  for a stopgap while a calc is mid-development, not as a final state.
 
 - **`calculate(v)`** — a pure function: `(values) => output`. It must not
   touch the DOM, must not have side effects, and must run fast — it fires
@@ -247,6 +266,17 @@ Rules:
   bug, not "improved" the calc.
 - Don't add a value to `shared-data.js` "for later" — only add what a
   real calc actually imports today.
+
+When it's a full **calculation method** shared by two near-identical
+calcs — not just a constant or a one-line formula — give it its own
+module next to `shared-data.js` rather than stuffing it in there. For
+example `js/bre470-platform.js` holds the BRE 470 punching-shear
+computation shared by `piling-mat-bre470.js` and `crane-pad-bre470.js`
+(same method, different plant sitting on the platform): each calc file
+just adds its own plant-specific inputs, diagram, and metadata, and calls
+the shared `computeBre470Platform(v)` for the actual numbers. Same rule
+applies: a refactor that moves shared logic out of a calc must not change
+that calc's validated results — re-run `test.html` to prove it.
 
 ## The `_pipe` cross-calc handoff pattern
 
