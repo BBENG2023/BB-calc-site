@@ -24,6 +24,7 @@ layout, routing, or CSS.
      windPressureEc1,
      herasFencing,
      serviceProtectionSlab,
+     legatoAbutment,
      myNewCalc, // <- the one line you add
    ];
    ```
@@ -277,6 +278,91 @@ just adds its own plant-specific inputs, diagram, and metadata, and calls
 the shared `computeBre470Platform(v)` for the actual numbers. Same rule
 applies: a refactor that moves shared logic out of a calc must not change
 that calc's validated results — re-run `test.html` to prove it.
+
+## Generic `table` input type and `tab` grouping
+
+For a plain repeating table, use `type: 'table'` with a `columns` schema —
+no bespoke field component needed:
+
+```js
+{ name: 'loads', label: 'Point loads', type: 'table',
+  columns: [
+    { key: 'name', label: 'Load', type: 'text' },
+    { key: 'F', label: 'F', type: 'number', unit: 'kN' },
+    { key: 'dir', label: 'Direction', type: 'select', options: ['down', 'up'] },
+    { key: 'on', label: 'Active', type: 'checkbox' },
+  ],
+  default: [{ name: 'P1', F: 10, dir: 'down', on: true }] },
+```
+
+The table (`js/table-input.js`) gives add / remove / duplicate rows and
+"Paste from spreadsheet" (tab-separated; pasting a block into any cell also
+works). Its value round-trips through the URL like the other structured
+types. Give inputs a `tab: 'Name'` to group a long flat form into tabs.
+
+## Calcs with their own input UI (`customUI` hook)
+
+When a calc's inputs are too rich for a flat form (the Legato abutment
+designer is the worked example: `calcs/legato-abutment/`), the module can
+export these optional hooks. The other calcs don't define them, so their
+code path is unchanged.
+
+- **`customUI(container, state, api)`** — render the inputs into
+  `container`, mutate `state` in place and call `api.scheduleRecalc()` (or
+  `api.recalcNow()`). `api` also gives `getOutput()`, `onRecalc(fn)`,
+  `rebuild()`, `replaceState(next)` (preset or file load), `toast(msg)` and
+  `headerDetails`. The runner still owns the page header, disclaimer
+  banner, results panel, diagram panel, report preview, print and `_pipe`.
+- **`initialState()`** — the starting state (the Legato calc restores an
+  auto-saved state from `localStorage`, else loads its synthetic preset).
+- **`renderResults(panel, output, state, api)`** — replace the default
+  results panel (the Legato dashboard: utilisation bars, metrics, runners).
+- **`buildReport(state, output, headerDetails, calc)`** — return a DOM
+  element containing several `.report-sheet` pages. Use
+  `buildSheetHeader`, `buildSignoff` and `buildFooter` from `js/report.js`
+  so every sheet carries the BB house-style header, the CEng statement and
+  "Sheet x of y". Add the class `lg-a3` pattern (named `@page a3sheet` in
+  `css/print.css`) for an A3 landscape drawing sheet.
+- **`debounceMs`** — recalculation debounce (default 150 ms).
+
+A custom-UI calc has no "Copy link with inputs" (its state is too large for
+a URL): provide design-file save/load with `js/file-io.js` instead
+(`saveJSON`, `loadJSON({ migrate })`, `saveCSV`, `saveSVG`). Keep a
+`schemaVersion` in the state and a `migrate(obj)` function so older design
+files keep loading.
+
+Validation samples for a large calc can test sub-modules directly: a
+sample may supply `run(inputs) => ({ results })` instead of using
+`calculate()`, and `calculate()` may return a flat `values` map that
+`expect` keys are looked up in (see `calcs/legato-abutment/index.js`).
+
+### Multi-end state pattern
+
+The Legato state keeps shared data at the top level (`project`, `basis`,
+`loads`, `crossing`, `boreholes`) and everything per abutment in
+`ends[0]` / `ends[1]` (levels, ground options, arrangement, fill). The
+engine evaluates each end independently (`engine.js` → `evaluateEnd`) and
+then runs the crossing checks that need both (span, differential
+settlement). Follow the same split for any future two-support calc.
+
+### `js/svg-kit.js`
+
+Scaled, print-safe drawing helpers for full drawings (as opposed to the
+small schematic figures of `js/diagrams.js`): `makeView` (world → screen with
+optional vertical exaggeration), `line`, `polyline`, `polygon`, `rect`,
+`circle`, `text`, `arrow`, `dimH`, `dimV`, `levelTag`, `legend`,
+`scaleBar`, `titleStrip` and hatch patterns (`HATCH`) for granular,
+cohesive, made ground, peat, topsoil, rock, Type 1, concrete, fill and
+water. Materials are always distinguished by hatch and label, never by
+colour alone. `svgDoc` gives each drawing its own pattern ids, so a hidden
+SVG never blanks the hatching of another.
+
+### The `plt` pipe
+
+The Legato calc's `output.design.ends[i].plt` is the plate load test
+requirement (target pressure, plate, acceptance, test count, note). It is
+shown on the Spec tab with a "Copy PLT requirement (JSON)" button, ready to
+pipe into the planned PLT brief generator.
 
 ## The `_pipe` cross-calc handoff pattern
 

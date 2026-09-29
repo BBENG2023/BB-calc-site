@@ -74,7 +74,8 @@ changing any `calculate()` function — or click its **Run all tests**
 button. It runs every registered calc's `validation.samples` against its
 own logic and reports pass/fail per calc, plus an overall summary. This
 matters especially after touching `js/shared-data.js`, since several
-calcs share it (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+calcs share it (see [CONTRIBUTING.md](CONTRIBUTING.md)). From the command
+line, `node tools/run-tests.mjs` runs the same samples (Node 22+).
 
 ## Cross-calc handoff and the print header
 
@@ -97,6 +98,26 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.3.0** — Added calc 11, **Bridge Abutment — Legato Interlocking
+  Block (Bank Seat)**, in a new catalogue category *Bridge Substructures —
+  Precast Block Abutments*. Designs and checks dry-laid Elite Legato bank
+  seats for single-span bridges: both ends in one design file; ground model
+  from SPT boreholes (parser, energy and overburden corrections,
+  correlations, characteristic values); EC7 DA1 + EQU external, internal
+  and local checks with legacy FoS alongside; Bishop overall stability;
+  Burland & Burbidge and consolidation settlement; crossing checks (setback,
+  scour, freeboard, regulatory buffer, span feedback); auto-sizing with a
+  "why this size" reason; drawings D1–D6; block schedule, levels and slope
+  geometry exports; specification clauses, designer's risk assessment and a
+  PLT requirement; an 18-section design sheet with "Sheet x of y". Runner
+  extensions (backwards-compatible): `customUI` / `renderResults` /
+  `buildReport` hooks, a generic `table` input type, tab grouping, per-calc
+  debounce, JSON design files, A3 drawing sheets. New shared modules
+  `js/geo-core.js`, `js/svg-kit.js`, `js/file-io.js`, `js/table-input.js`,
+  `js/tabs.js`. Validation samples V1–V6 plus unit tests; run
+  `node tools/run-tests.mjs` or open `test.html`. Method statement for the
+  checker: `docs/legato-abutment-method.md`; deferred items:
+  `docs/legato-abutment-deferred.md`.
 - **v1.2.0** — Every calc now has a live, parametric "Definition diagram"
   (all ten calcs, up from four). Split the combined piling mat/crane
   platform calc into two separate calcs — **Piling Mat Design to BRE

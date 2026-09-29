@@ -349,3 +349,30 @@
     content: '';
   }
 }
+
+/* --- Multi-sheet reports (calc.buildReport) --- */
+.lg-report .report-sheet { margin-bottom: 18px; }
+.report-sheet .lg-h5 { font-size: 9pt; font-weight: 800; margin: 8pt 0 3pt; color: var(--bb-primary); }
+.report-sheet .lg-table td, .report-sheet .lg-table th { font-size: 8pt; vertical-align: top; }
+.report-sheet .lg-small td, .report-sheet .lg-small th { font-size: 7pt; }
+.report-sheet .lg-note { font-size: 8pt; color: #333; }
+.report-sheet .lg-drawing { margin: 6pt 0; page-break-inside: avoid; }
+.report-sheet .lg-drawing svg { max-width: 100%; height: auto; }
+.report-sheet .lg-util { font-weight: 700; }
+.report-sheet .lg-util.fail, .report-sheet .lg-status.fail { color: #c62828; }
+.report-sheet .lg-util.near, .report-sheet .lg-status.flag { color: #8a5a00; }
+.report-sheet .lg-util.ok, .report-sheet .lg-status.ok { color: #2e7d32; }
+.report-sheet .lg-status { font-weight: 800; font-size: 7.5pt; }
+.report-sheet .lg-disclaimer { font-size: 7pt; font-weight: 700; padding: 3pt 12pt; background: var(--bb-warn-bg); border-top: 0.5pt solid var(--bb-warn-ln); }
+.report-sheet .lg-compact-signoff .rs-signoff-statement { font-size: 7pt; padding: 3pt 12pt; }
+.report-sheet .lg-compact-signoff .rs-signoff-rows { padding: 4pt 12pt; }
+.report-sheet .lg-compact-signoff .rs-signoff-row { margin: 0; }
+.report-sheet .rs-body p { margin: 0 0 4pt; }
+
+@media print {
+  @page a3sheet { size: A3 landscape; margin: 12mm; }
+  .lg-report .report-sheet { margin: 0; break-after: page; page-break-after: always; }
+  .lg-report .report-sheet:last-child { break-after: auto; page-break-after: auto; }
+  .lg-report .report-sheet.lg-a3 { page: a3sheet; }
+  .diagram-section, .header-details, .custom-ui-host, .tab-bar { display: none !important; }
+}

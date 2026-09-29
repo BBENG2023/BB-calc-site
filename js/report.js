@@ -45,11 +45,20 @@ const BB_PHONE = '01743 811 811';
 export function buildReportSheet(calc, inputs, output, visibleInputNames, headerDetails = {}) {
   const { results = [], steps = [], warnings = [], verdict } = output || {};
   let sectionNum = 0;
-  const h = headerDetails;
 
   const sheet = el('div', 'report-sheet rs-border');
+  const [head, titleBar] = buildSheetHeader(calc, headerDetails);
 
-  // --- Row 1: company block (left) + project block (right) ---
+  // --- Body ---
+  const body = el('div', 'rs-body');
+  return finishSheet(calc, inputs, output, visibleInputNames, sheet, head, titleBar, body, { results, steps, warnings, verdict, sectionNum });
+}
+
+// BB house-style sheet header: company block + project block, then the
+// navy title strip. `sheetText` overrides the Sheet No cell (multi-sheet
+// reports pass "3 of 18").
+export function buildSheetHeader(calc, headerDetails = {}, sheetText = null, titleText = null) {
+  const h = headerDetails;
   const head = el('div', 'rs-head');
   const headLeft = el('div', 'rs-head-left');
   headLeft.innerHTML = `
@@ -64,7 +73,7 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames, header
     <table class="rs-meta-table">
       <tr><td class="rs-meta-label">Project No</td><td class="rs-meta-fill">${escapeHtml(h.projectNo || '') || '&nbsp;'}</td></tr>
       <tr><td class="rs-meta-label">Project Title</td><td class="rs-meta-fill">${escapeHtml(h.projectTitle || '') || '&nbsp;'}</td></tr>
-      <tr><td class="rs-meta-label">Sheet No</td><td class="rs-meta-fill">${escapeHtml(h.sheetNo || '') || '&nbsp;'}${h.sheetOf ? ` of ${escapeHtml(h.sheetOf)}` : ''}</td></tr>
+      <tr><td class="rs-meta-label">Sheet No</td><td class="rs-meta-fill">${sheetText !== null ? escapeHtml(sheetText) : `${escapeHtml(h.sheetNo || '') || '&nbsp;'}${h.sheetOf ? ` of ${escapeHtml(h.sheetOf)}` : ''}`}</td></tr>
       <tr><td class="rs-meta-label">Date</td><td class="rs-meta-fill">${escapeHtml(h.date || '') || todayUK()}</td></tr>
       <tr><td class="rs-meta-label">Engineer</td><td class="rs-meta-fill">${escapeHtml(h.engineerInitials || '') || '&nbsp;'}</td></tr>
       <tr><td class="rs-meta-label">Checked</td><td class="rs-meta-fill">${escapeHtml(h.checkedCategory || '') || '&nbsp;'}</td></tr>
@@ -74,11 +83,40 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames, header
   // --- Row 2: calc title (bold, left) + ID/version (small, right) ---
   const titleBar = el('div', 'rs-title-bar');
   titleBar.innerHTML = `
-    <span class="rs-title-main">${escapeHtml(calc.title)}</span>
+    <span class="rs-title-main">${escapeHtml(titleText || calc.title)}</span>
     <span class="rs-title-meta">ID: ${escapeHtml(calc.id)} · v${escapeHtml(calc.version)}</span>`;
+  return [head, titleBar];
+}
 
-  // --- Body ---
-  const body = el('div', 'rs-body');
+// Verification and sign-off block (CEng statement + prepared/checked/approved).
+export function buildSignoff() {
+  const signoff = el('div', 'rs-signoff');
+  const signoffStatement = el('div', 'rs-signoff-statement');
+  signoffStatement.innerHTML = `<strong>DESIGN OUTPUT — REQUIRES INDEPENDENT VERIFICATION AND SIGN-OFF</strong> BY A
+    CHARTERED ENGINEER (CEng MICE / MIStructE) PRIOR TO ACCEPTANCE FOR
+    FABRICATION, CONSTRUCTION OR TENDER.`;
+  const signoffRows = el('div', 'rs-signoff-rows');
+  signoffRows.innerHTML = ['Prepared', 'Checked', 'Approved'].map((r) => `
+    <div class="rs-signoff-row">
+      <span>${r}</span><span class="line"></span>
+      <span>Signed</span><span class="line"></span>
+      <span>Date</span><span class="line"></span>
+    </div>`).join('');
+  signoff.append(signoffStatement, signoffRows);
+  return signoff;
+}
+
+export function buildFooter(right = 'Page 1/1') {
+  const footer = el('div', 'rs-footer');
+  footer.innerHTML = `<span>Beaver Bridges Ltd | Engineering Toolkit</span><span>${escapeHtml(right)}</span>`;
+  return footer;
+}
+
+export { el, sectionTitle };
+
+function finishSheet(calc, inputs, output, visibleInputNames, sheet, head, titleBar, body, ctx) {
+  const { results, steps, warnings, verdict } = ctx;
+  let { sectionNum } = ctx;
 
   if (calc.references && calc.references.length) {
     const sec = el('section', 'rs-section');
@@ -107,6 +145,16 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames, header
           <td>Top ${escapeHtml(inputDisplayValue({ type: 'number' }, row.top))} m — Bottom ${escapeHtml(inputDisplayValue({ type: 'number' }, row.bottom))} m</td>
           <td class="num">${escapeHtml(inputDisplayValue({ type: 'number' }, row.Es))}</td>
           <td>MPa</td>`;
+        tbody.append(tr);
+      });
+      return;
+    }
+
+    if (def.type === 'table') {
+      (value || []).forEach((row, i) => {
+        const tr = el('tr');
+        const desc = (def.columns || []).map((c) => `${c.label} ${inputDisplayValue(c, row[c.key])}${c.unit ? ` ${c.unit}` : ''}`).join('; ');
+        tr.innerHTML = `<td>${escapeHtml(def.name)} ${i + 1}</td><td colspan="3">${escapeHtml(desc)}</td>`;
         tbody.append(tr);
       });
       return;
@@ -245,34 +293,6 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames, header
     body.append(sec);
   }
 
-  // Sign-off block
-  const signoff = el('div', 'rs-signoff');
-  const signoffStatement = el('div', 'rs-signoff-statement');
-  signoffStatement.innerHTML = `<strong>DESIGN OUTPUT — REQUIRES INDEPENDENT VERIFICATION AND SIGN-OFF</strong> BY A
-    CHARTERED ENGINEER (CEng MICE / MIStructE) PRIOR TO ACCEPTANCE FOR
-    FABRICATION, CONSTRUCTION OR TENDER.`;
-  const signoffRows = el('div', 'rs-signoff-rows');
-  signoffRows.innerHTML = `
-    <div class="rs-signoff-row">
-      <span>Prepared</span><span class="line"></span>
-      <span>Signed</span><span class="line"></span>
-      <span>Date</span><span class="line"></span>
-    </div>
-    <div class="rs-signoff-row">
-      <span>Checked</span><span class="line"></span>
-      <span>Signed</span><span class="line"></span>
-      <span>Date</span><span class="line"></span>
-    </div>
-    <div class="rs-signoff-row">
-      <span>Approved</span><span class="line"></span>
-      <span>Signed</span><span class="line"></span>
-      <span>Date</span><span class="line"></span>
-    </div>`;
-  signoff.append(signoffStatement, signoffRows);
-
-  const footer = el('div', 'rs-footer');
-  footer.innerHTML = `<span>Beaver Bridges Ltd | Engineering Toolkit</span><span>Page 1/1</span>`;
-
-  sheet.append(head, titleBar, body, signoff, footer);
+  sheet.append(head, titleBar, body, buildSignoff(), buildFooter());
   return sheet;
 }

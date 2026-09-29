@@ -8,6 +8,7 @@ import { fmtUnit, escapeHtml } from './formatters.js';
 import { buildReportSheet } from './report.js';
 import { HEADER_FIELDS, loadHeaderDetails, saveHeaderDetails } from './header-details.js';
 import { parsePipeRequest, buildPipeRequestLink, buildSendBackButton } from './pipe.js';
+import { createTable } from './table-input.js';
 
 const DEBOUNCE_MS = 150;
 
@@ -90,6 +91,11 @@ function renderCalcPage(root) {
 
   document.title = `${calc.title} — Beaver Bridges Engineering Toolkit`;
 
+  if (calc.customUI) {
+    renderCustomCalcPage(root, calc, params);
+    return;
+  }
+
   const values = initialValues(calc, params);
   const headerDetails = loadHeaderDetails();
   const pipedFieldName = params.get('_piped');
@@ -153,7 +159,7 @@ function renderCalcPage(root) {
   let debounceHandle = null;
   function scheduleRecalc() {
     clearTimeout(debounceHandle);
-    debounceHandle = setTimeout(() => recalc(calc, values, resultsPanel, reportFrame, diagramFrame, headerDetails, pipeRequest), DEBOUNCE_MS);
+    debounceHandle = setTimeout(() => recalc(calc, values, resultsPanel, reportFrame, diagramFrame, headerDetails, pipeRequest), calc.debounceMs ?? DEBOUNCE_MS);
   }
 
   let form = buildForm(calc, values, scheduleRecalc);
@@ -170,6 +176,137 @@ function renderCalcPage(root) {
 
   updateUrl(calc, values);
   recalc(calc, values, resultsPanel, reportFrame, diagramFrame, headerDetails, pipeRequest);
+}
+
+// Calc with its own input UI (`customUI(container, state, api)`). The runner
+// still owns the header, disclaimer, results panel, diagram, report preview,
+// print and `_pipe`; the calc owns the inputs, may override the results
+// panel (`renderResults`) and the report (`buildReport`, multi-sheet). State
+// is too large for the URL, so "Copy link with inputs" is not offered — the
+// calc provides design-file save/load instead.
+function renderCustomCalcPage(root, calc, params) {
+  const values = calc.initialState ? calc.initialState() : {};
+  const headerDetails = loadHeaderDetails();
+  const pipeRequest = parsePipeRequest(params);
+
+  root.innerHTML = '';
+  root.append(buildCalcHeader(calc));
+  if (pipeRequest) {
+    const consumerCalc = registry.find((c) => c.id === pipeRequest.consumerCalcId);
+    const notice = document.createElement('div');
+    notice.className = 'pipe-notice';
+    notice.textContent = `Requested by ${consumerCalc ? consumerCalc.title : pipeRequest.consumerCalcId} — use "Send back" below the headline result once you're happy with it.`;
+    root.append(notice);
+  }
+
+  const layout = document.createElement('div');
+  layout.className = 'calc-layout calc-layout-custom';
+  const leftCol = document.createElement('div');
+  leftCol.className = 'calc-col-form';
+  leftCol.append(buildInfoBlocks(calc));
+  const formHost = document.createElement('div');
+  formHost.className = 'custom-ui-host';
+  leftCol.append(formHost);
+  const rightCol = document.createElement('div');
+  rightCol.className = 'calc-col-results';
+  const btnRow = document.createElement('div');
+  btnRow.className = 'btn-row';
+  btnRow.innerHTML = '<button type="button" class="btn" data-action="print">Print / Save as PDF</button>';
+  btnRow.querySelector('button').addEventListener('click', () => window.print());
+  const resultsPanel = document.createElement('div');
+  resultsPanel.className = 'results-panel';
+  rightCol.append(btnRow, resultsPanel);
+  layout.append(leftCol, rightCol);
+  root.append(layout);
+
+  let diagramFrame = null;
+  if (calc.diagram) {
+    const diagramSection = document.createElement('section');
+    diagramSection.className = 'diagram-section';
+    diagramSection.innerHTML = '<h2>Definition diagram</h2><p class="muted">Section through the active end, updates live with your inputs — full drawings in the Drawings tab and the report.</p>';
+    diagramFrame = document.createElement('div');
+    diagramFrame.className = 'diagram-frame';
+    diagramSection.append(diagramFrame);
+    root.append(diagramSection);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  document.body.append(toast);
+  const showToast = (msg) => {
+    toast.textContent = msg;
+    toast.classList.add('visible');
+    setTimeout(() => toast.classList.remove('visible'), 1800);
+  };
+
+  let output = null;
+  const listeners = [];
+  let debounceHandle = null;
+  const api = {
+    headerDetails,
+    scheduleRecalc: () => { clearTimeout(debounceHandle); debounceHandle = setTimeout(doRecalc, calc.debounceMs ?? DEBOUNCE_MS); },
+    recalcNow: () => { clearTimeout(debounceHandle); doRecalc(); },
+    getOutput: () => output,
+    onRecalc: (fn) => listeners.push(fn),
+    rebuild: () => rebuild(),
+    replaceState: (next) => {
+      Object.keys(values).forEach((k) => delete values[k]);
+      Object.assign(values, next);
+      rebuild();
+      doRecalc();
+    },
+    toast: showToast,
+  };
+
+  function rebuild() {
+    listeners.length = 0;
+    formHost.innerHTML = '';
+    calc.customUI(formHost, values, api);
+  }
+
+  root.append(buildHeaderDetailsPanel(headerDetails, () => doRecalc()));
+  const reportSection = document.createElement('section');
+  reportSection.className = 'report-section';
+  reportSection.innerHTML = '<h2>Preview report</h2><p class="muted">This is exactly what prints when you choose "Print / Save as PDF".</p>';
+  const reportFrame = document.createElement('div');
+  reportFrame.className = 'report-frame';
+  reportFrame.id = 'report-root';
+  reportSection.append(reportFrame);
+  root.append(reportSection);
+
+  function doRecalc() {
+    try {
+      output = calc.calculate(values) || {};
+    } catch (err) {
+      console.error(err);
+      output = { results: [], steps: [], warnings: [`Calculation error: ${err.message}`] };
+    }
+    try {
+      if (calc.renderResults && output.design) calc.renderResults(resultsPanel, output, values, api);
+      else renderResults(resultsPanel, output, null);
+    } catch (err) {
+      console.error(err);
+      renderResults(resultsPanel, { ...output, warnings: [...(output.warnings || []), `Results panel error: ${err.message}`] }, null);
+    }
+    if (pipeRequest) {
+      const headline = (output.results || []).find((r) => r.highlight);
+      if (headline) resultsPanel.append(buildSendBackButton(pipeRequest, `${headline.symbol || headline.label}`, () => headline.value));
+    }
+    if (diagramFrame) {
+      try { diagramFrame.innerHTML = calc.diagram(values, output); } catch (err) { diagramFrame.innerHTML = `<p class="muted">Diagram unavailable: ${escapeHtml(err.message)}</p>`; }
+    }
+    reportFrame.innerHTML = '';
+    try {
+      reportFrame.append(calc.buildReport && output.design ? calc.buildReport(values, output, headerDetails, calc) : buildReportSheet(calc, values, output, null, headerDetails));
+    } catch (err) {
+      console.error(err);
+      reportFrame.innerHTML = `<p class="muted">Report unavailable: ${escapeHtml(err.message)}</p>`;
+    }
+    listeners.forEach((fn) => { try { fn(output); } catch (err) { console.error(err); } });
+  }
+
+  rebuild();
+  doRecalc();
 }
 
 // "Header details" collapsible — project no./title/sheet/date/engineer
@@ -290,7 +427,7 @@ function buildInfoBlocks(calc) {
 
 // Custom field types whose value is a structured array/object (rather than
 // a plain string/number) — cloned on default, JSON-encoded in the URL.
-const STRUCTURED_TYPES = new Set(['layers', 'phase-picker', 'vehicle-rows']);
+const STRUCTURED_TYPES = new Set(['layers', 'phase-picker', 'vehicle-rows', 'table']);
 
 function defaultValueFor(def) {
   // Structured types must be cloned per instance so that editing one calc
@@ -348,6 +485,37 @@ function buildForm(calc, values, onChange) {
   form.className = 'calc-form';
   form.noValidate = true;
 
+  // Optional tabs layout: inputs carrying `tab: 'Name'` are grouped into
+  // tab panels (all panels stay in the DOM so delegated events still work).
+  const tabNames = [...new Set(calc.inputs.map((d) => d.tab).filter(Boolean))];
+  if (tabNames.length) {
+    const bar = document.createElement('div');
+    bar.className = 'tab-bar';
+    bar.setAttribute('role', 'tablist');
+    const panels = new Map();
+    tabNames.forEach((name, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tab-btn';
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+      b.textContent = name;
+      const panel = document.createElement('div');
+      panel.className = 'tab-panel';
+      panel.hidden = i !== 0;
+      panels.set(name, panel);
+      b.addEventListener('click', () => {
+        [...bar.children].forEach((x) => x.setAttribute('aria-selected', x === b ? 'true' : 'false'));
+        panels.forEach((p, n) => { p.hidden = n !== name; });
+      });
+      bar.append(b);
+    });
+    form.append(bar);
+    calc.inputs.forEach((def) => (panels.get(def.tab) || panels.get(tabNames[0])).append(buildField(def, values, onChange)));
+    panels.forEach((p) => form.append(p));
+    return form;
+  }
+
   calc.inputs.forEach((def) => {
     form.append(buildField(def, values, onChange));
   });
@@ -355,7 +523,33 @@ function buildForm(calc, values, onChange) {
   return form;
 }
 
+// Generic repeating table (`type: 'table'`): `columns` schema, add / remove
+// / duplicate rows, paste from a spreadsheet — see js/table-input.js.
+function buildTableField(def, values, onChange) {
+  const field = document.createElement('div');
+  field.className = 'field';
+  field.dataset.fieldFor = def.name;
+  const label = document.createElement('label');
+  label.textContent = def.label || def.name;
+  field.append(label);
+  if (def.help) {
+    const help = document.createElement('div');
+    help.className = 'field-help';
+    help.textContent = def.help;
+    field.append(help);
+  }
+  if (!Array.isArray(values[def.name])) values[def.name] = [];
+  field.append(createTable({
+    columns: def.columns || [],
+    rows: values[def.name],
+    onChange: () => onChange(),
+    newRow: () => (def.newRow ? def.newRow() : Object.fromEntries((def.columns || []).map((c) => [c.key, c.type === 'number' ? 0 : c.type === 'checkbox' ? false : '']))),
+  }));
+  return field;
+}
+
 function buildField(def, values, onChange) {
+  if (def.type === 'table') return buildTableField(def, values, onChange);
   if (def.type === 'layers') return buildLayersField(def, values, onChange);
   if (def.type === 'phase-picker') return buildPhasePickerField(def, values, onChange);
   if (def.type === 'vehicle-rows') return buildVehicleRowsField(def, values, onChange);

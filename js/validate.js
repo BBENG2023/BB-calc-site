@@ -14,14 +14,16 @@ export function runValidation(registry) {
       let output;
       let error = null;
       try {
-        output = calc.calculate(sample.inputs) || {};
+        // A sample may supply its own `run(inputs)` (e.g. to test a single
+        // sub-module of a large calc); otherwise the calc's calculate().
+        output = (sample.run ? sample.run(sample.inputs) : calc.calculate(sample.inputs)) || {};
       } catch (err) {
         error = err.message;
         output = { results: [] };
       }
       const checks = Object.entries(sample.expect || {}).map(([symbol, exp]) => {
         const r = (output.results || []).find((x) => x.symbol === symbol);
-        const actual = r ? r.value : undefined;
+        const actual = r ? r.value : output.values?.[symbol];
         const pass = actual !== undefined && Math.abs(actual - exp.value) <= exp.tol;
         return { symbol, expected: exp.value, tol: exp.tol, unit: exp.unit, actual, pass };
       });

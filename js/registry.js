@@ -12,6 +12,7 @@ import cranePadBre470 from '../calcs/crane-pad-bre470.js';
 import windPressureEc1 from '../calcs/wind-pressure-ec1.js';
 import herasFencing from '../calcs/heras-fencing.js';
 import serviceProtectionSlab from '../calcs/service-protection-slab.js';
+import legatoAbutment from '../calcs/legato-abutment/index.js';
 
 export const registry = [
   bearingCapacity,
@@ -24,4 +25,5 @@ export const registry = [
   windPressureEc1,
   herasFencing,
   serviceProtectionSlab,
+  legatoAbutment,
 ];
