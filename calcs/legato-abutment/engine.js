@@ -204,7 +204,7 @@ export function evaluateEnd(state, endIdx) {
   add('I2', 'Interface toppling', I.I2);
   add('I3', 'Interface contact', I.I3);
   I4.forEach((s) => add(s.id, s.title, s.util, { gov: s.label }));
-  local.filter((l) => !l.info || l.id === 'L2').forEach((l) => add(l.id, l.title, l.util, { info: l.info }));
+  local.filter((l) => !l.info || l.id === 'L2').forEach((l) => add(l.id, l.title, l.info ? Math.min(l.util, 1.5) : l.util, { info: l.info, flag: l.info && !l.pass }));
   if (settle) add('E6', 'Settlement', settle.total / (end.settlementLimit || 25));
   const na = new Set(u.filter((x) => x.na).map((x) => x.id));
   const util = u.filter((x) => !na.has(x.id));
@@ -213,7 +213,7 @@ export function evaluateEnd(state, endIdx) {
     endIdx, label: end.label, geom, ground, layout, levels, situations,
     checks: { E1, E2, E3, E4, E7 }, interfaces: I, I4, local, settle, plt, construction,
     intSteps: interfaceSteps(ctx, I.rows), util, warnings, errors: [...layout.errors, ...(levels.status === 'fail' ? levels.messages : [])],
-    maxUtil: Math.max(0, ...util.map((x) => x.util)),
+    maxUtil: Math.max(0, ...util.filter((x) => !x.info).map((x) => x.util)),
   };
 }
 

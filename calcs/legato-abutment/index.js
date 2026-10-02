@@ -15,6 +15,8 @@ import { rotateToAbutment, earthCoefficient } from './actions.js';
 import { parseSPT, n60, overburdenCN, phiPHT, phiHatanaka, cuStroud } from '../../js/geo-core.js';
 import { LEGATO_BLOCKS, legatoVolume } from '../../js/shared-data.js';
 import { clone, inputHash } from './schema.js';
+import { libraryDesign } from '../../js/bridge-library.js';
+import { expandSimpleBorehole } from './ground.js';
 
 function values(o) {
   const v = {};
@@ -123,7 +125,7 @@ export default {
   title: 'Bridge Abutment — Legato Interlocking Block (Bank Seat)',
   category: 'Bridge Substructures — Precast Block Abutments',
   tag: 'EC7 DA1 · Legato',
-  version: '1.0.0',
+  version: '1.2.1',
   schemaVersion: SCHEMA_VERSION,
   debounceMs: 300,
   references: [
@@ -150,7 +152,7 @@ export default {
   assumptions: [
     'EC7 Design Approach 1 (Combinations 1 and 2) with EQU; legacy unity-factor FoS (1.5 sliding/toppling) reported alongside for comparison with Elite/CPL designs.',
     'Block self-weight from computed net volume × 2350 kg/m³ unless another basis is chosen; handling uses the greater of stated and computed mass.',
-    'Block interfaces resist horizontal load by friction only (μk = 0.5); nib shear is an opt-in BB judgement, not manufacturer data. No tension or friction on vertical joints.',
+    'Block interfaces resist horizontal load by friction (μk = 0.5) plus nib interlock on the selected basis (BB basis: CLP Structures calc 302 for Elite — 21.4 kN allowable per nib, half the nibs effective), counting only male nibs under a block above; ballast wall on grout and blocks on the pad have no nibs. No tension or friction on vertical joints.',
     'Earth pressure on a vertical virtual back at the rear of each checked stack; Rankine Ka (δ = 0) by default. Fill on steps and heels counts as stabilising weight; surcharge is never counted as stabilising.',
     'Variable vertical traffic is set to zero where favourable (sliding, overturning); bearing checks both γG,sup and γG,inf on weights.',
     'Approach surcharge acts with the leading traffic model (same γQ) unless excluded for that model.',
@@ -273,6 +275,38 @@ export default {
           return { results: [{ symbol: 'hash_equal', value: inputHash(a) === inputHash(b) ? 1 : 0 }, { symbol: 'results_equal', value: same ? 1 : 0 }] };
         },
         expect: { hash_equal: { value: 1, tol: 0 }, results_equal: { value: 1, tol: 0 } },
+      },
+      {
+        name: 'Unit — standard bridge library (SSVB 12 m per BB200-01-RP-200-001 P03; BCB 4.0 × 6.0 m; WB DS 8 bays) and simple borehole entry',
+        inputs: {},
+        run: () => {
+          const ss = libraryDesign('SSVB', 'SSVB-12.0', 'CS454+SV80DOF');
+          const ssCS = libraryDesign('SSVB', 'SSVB-12.0', 'CS454');
+          const ssSV = libraryDesign('SSVB', 'SSVB-12.0', 'CS454+SV80');
+          const bc = libraryDesign('BCB', 'BCB-4.0x6.0');
+          const wb = libraryDesign('WB', 'WB-8');
+          const z = (d, name) => d.reactions.find((x) => x.name.startsWith(name));
+          const bh = expandSimpleBorehole({ simple: true, finalDepth: null, simpleRows: [
+            { depth: 0, soil: 'Topsoil', N: '' }, { depth: 0.3, soil: 'Sand', N: '' }, { depth: 1.0, soil: 'Sand', N: '12' },
+            { depth: 2.0, soil: 'Sand', N: '18' }, { depth: 3.0, soil: 'Clay/silt', N: '20' }, { depth: 4.0, soil: 'Clay/silt', N: '50/75' },
+          ] });
+          return { results: [
+            { symbol: 'SSVB12_G', value: z(ss, 'Dead load').Z }, { symbol: 'SSVB12_SV80', value: z(ss, 'SV-80').Z },
+            { symbol: 'SSVB12_brake_per_end', value: z(ss, 'SV-80 braking').X }, { symbol: 'SSVB12_both_fixed', value: ss.project.fixedEnd === 0 ? 1 : 0 },
+            { symbol: 'SSVB12_CS_models', value: ssCS.trafficModels.length }, { symbol: 'SSVB12_CS_brake', value: z(ssCS, 'CS 454 braking').X }, { symbol: 'SSVB12_CS_trans', value: z(ssCS, 'CS 454 braking').Y },
+            { symbol: 'SSVB12_SVplain', value: z(ssSV, 'SV-80').Z },
+            { symbol: 'BCB4x6_models', value: bc.trafficModels.length }, { symbol: 'BCB4x6_2lane', value: z(bc, '2-lane').Z }, { symbol: 'BCB4x6_span', value: bc.project.span }, { symbol: 'BCB4x6_bearings', value: bc.project.bearingsPerEnd },
+            { symbol: 'WB8_SV80_abutment', value: z(wb, 'SV-80').Z }, { symbol: 'WB8_brake_fixed_end', value: z(wb, 'Braking').X },
+            { symbol: 'BH_strata', value: bh.strata.length }, { symbol: 'BH_sand_top', value: bh.strata[1].top },
+            { symbol: 'BH_clay_top', value: bh.strata[2].top }, { symbol: 'BH_spt', value: bh.spt.length }, { symbol: 'BH_base', value: bh.finalDepth },
+          ] };
+        },
+        expect: {
+          SSVB12_G: { value: 73.5, tol: 1e-6 }, SSVB12_SV80: { value: 725, tol: 0 }, SSVB12_brake_per_end: { value: 124.5, tol: 1e-6 }, SSVB12_both_fixed: { value: 1, tol: 0 },
+          SSVB12_CS_models: { value: 1, tol: 0 }, SSVB12_CS_brake: { value: 98.25, tol: 1e-6 }, SSVB12_CS_trans: { value: 49.125, tol: 1e-6 }, SSVB12_SVplain: { value: 497, tol: 0 },
+          BCB4x6_models: { value: 6, tol: 0 }, BCB4x6_2lane: { value: 614, tol: 0 }, BCB4x6_span: { value: 3.645, tol: 1e-9 }, BCB4x6_bearings: { value: 4, tol: 0 }, WB8_SV80_abutment: { value: 842, tol: 0 }, WB8_brake_fixed_end: { value: 390, tol: 0 },
+          BH_strata: { value: 3, tol: 0 }, BH_sand_top: { value: 0.3, tol: 1e-9 }, BH_clay_top: { value: 2.5, tol: 1e-9 }, BH_spt: { value: 4, tol: 0 }, BH_base: { value: 4.5, tol: 1e-9 },
+        },
       },
       {
         name: 'Unit — combination generator (situation counts)',

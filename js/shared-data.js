@@ -240,11 +240,24 @@ export const FACTOR_PRESETS = {
   },
 };
 
+// Nib (interlock) shear bases. Design resistance per engaged nib =
+// V × η / γ, counting only male nibs of the lower course that sit under a
+// block of the course above. Used at SLS (no-slip) and ULS.
+export const NIB_BASES = {
+  none: { label: 'Friction only — no reliance on the nibs', V: 0, eta: 0, gamma: 1, source: '' },
+  clp: {
+    label: 'CLP Structures calc 302 (Jan 2015) for Elite — 21.4 kN allowable per nib, half the nibs effective',
+    V: 21.4, eta: 0.5, gamma: 1.0,
+    source: 'CLP Structures Ltd, "Shear Transfer between Legato Blocks", job 302, sheet 2 (Dec 2014 / Jan 2015, checked NML): 0.7 × 0.15 × √40 = 0.66 N/mm² on a 180 × 180 nib (195 less tolerance) = 21.4 kN; half the nibs assumed to act together for dimensional tolerance (85.5 kN per LG8).',
+  },
+  user: { label: 'User-defined', V: 21.4, eta: 0.5, gamma: 1.0, source: 'User-defined — state the source in the design notes.' },
+};
+
 // Data flags surfaced in every Legato abutment report (spec §5.3).
 export const LEGATO_DATA_FLAGS = [
   'LG8 stated volume (1.105 m³) is inconsistent with its geometry and stated mass (2400 kg). The computed value 1.015 m³ is used for self-weight. Confirm with Elite.',
   'LG1–LG3 drawings state a 2.5 t anchor/clutch in the handling notes but a 5.0 t load-class anchor in the lifting pin characteristics. Confirm the lifting accessory rating with Elite before specifying.',
-  'Elite publish no interlock shear capacity. Any nib shear contribution is BB engineering judgement and must be confirmed with Elite or justified by test.',
+  'Nib shear basis: BB adopts CLP Structures calc 302 for Elite (21.4 kN allowable per nib, half the nibs effective — 85.5 kN per LG8). Elite\'s own shear force sheet (32 kN per nock, unfactored) is not used. Nib engagement depends on correct installation (Elite EPC-DRG-268: 7.5 mm clearance each side when correctly seated) — inspect seating at each course hold point.',
   'The Elite guide design examples use γ = 23 kN/m³; the Elite drawings use 2350 kg/m³ (23.05 kN/m³). The drawing value is used unless the weight basis is set otherwise.',
 ];
 

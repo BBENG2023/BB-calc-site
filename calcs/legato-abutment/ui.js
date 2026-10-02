@@ -6,7 +6,9 @@ import { createTabs } from '../../js/tabs.js';
 import { createTable } from '../../js/table-input.js';
 import { saveJSON, loadJSON, saveCSV, saveSVG } from '../../js/file-io.js';
 import { escapeHtml, fmt } from '../../js/formatters.js';
-import { FIELDS, getPath, setPath, clone, migrate, inputHash, REACTION_GROUPS, STRATUM_CLASSES, GRANULAR_TYPES, newBorehole, newCourse, newReaction, ALL_BLOCK_TYPES } from './schema.js';
+import { FIELDS, getPath, setPath, clone, migrate, inputHash, REACTION_GROUPS, STRATUM_CLASSES, GRANULAR_TYPES, SIMPLE_SOILS, newSimpleBorehole, newCourse, newReaction, ALL_BLOCK_TYPES } from './schema.js';
+import { expandSimpleBorehole } from './ground.js';
+import { BRIDGE_RANGES, libraryDesign } from '../../js/bridge-library.js';
 import { PRESETS, bbStandard } from './presets.js';
 import { FACTOR_PRESETS, FILL_MATERIALS } from '../../js/shared-data.js';
 import { evaluate } from './engine.js';
@@ -170,7 +172,7 @@ export function customUI(container, state, api) {
 
   const T = [];
   T.push({ key: 'project', label: '1 Project & bridge', render: (p) => renderProject(p, state, onChange) });
-  T.push({ key: 'loads', label: '2 Loads', render: (p) => renderLoads(p, state, onChange) });
+  T.push({ key: 'loads', label: '2 Loads', render: (p) => renderLoads(p, state, onChange, api) });
   T.push({ key: 'crossing', label: bridgeMode(state) ? '3 Crossing & levels' : '3 Levels', render: (p) => renderCrossing(p, state, E(), activeEnd(), onChange, api) });
   T.push({ key: 'ground', label: '4 Ground', render: (p) => renderGround(p, state, E(), activeEnd(), onChange, api) });
   T.push({ key: 'arrangement', label: '5 Arrangement', render: (p) => renderArrangement(p, state, E(), activeEnd(), onChange, api) });
@@ -184,9 +186,11 @@ export function customUI(container, state, api) {
 
 // --- Tab 1 -----------------------------------------------------------------------------
 
+const PROJECT_MAIN = ['project.mode', 'project.status', 'project.designLife', 'project.freeboardRequired', 'project.dMin'];
+const usingLibrary = (state) => bridgeMode(state) && state.loads.library && state.loads.library.range && state.loads.library.range !== 'bespoke';
+
 function renderProject(p, state, onChange) {
-  const bridgeFields = FIELDS.project;
-  p.append(fieldset('Design mode, bridge and bearings', bridgeFields, state, state, null, (s) => { onChange(s); }));
+  p.append(fieldset('Design', FIELDS.project.filter((d) => PROJECT_MAIN.includes(d.path)), state, state, null, onChange));
   const lv = ['seatLevel', 'FRL', 'soffitOverride', 'fillSurfaceMode', 'fillSurfaceZ'];
   const row = h('div', 'lg-cols');
   (bridgeMode(state) ? [0, 1] : [0]).forEach((i) => {
@@ -194,53 +198,169 @@ function renderProject(p, state, onChange) {
     row.append(fieldset(`${bridgeMode(state) ? end.label : 'Wall'} — levels`, pick(FIELDS.end, lv).map((d) => (d.path === 'seatLevel' && !bridgeMode(state) ? { ...d, label: 'Top of wall level' } : d)), end, state, end, onChange));
   });
   p.append(row);
-  if (!bridgeMode(state)) p.append(h('p', 'field-help', 'Retaining-wall mode: analysis per metre run (set L = 1000 mm) or for the full length; bridge, hydraulic and crossing checks are not run.'));
+  if (bridgeMode(state)) {
+    const det = h('details', 'lg-more');
+    det.open = !usingLibrary(state);
+    det.append(h('summary', null, usingLibrary(state) ? 'Bridge geometry and bearings — set from the selected standard bridge (open to adjust)' : 'Bridge geometry and bearings'));
+    det.append(fieldset('Bridge geometry and bearings', FIELDS.project.filter((d) => !PROJECT_MAIN.includes(d.path)), state, state, null, onChange));
+    p.append(det);
+    p.append(h('p', 'field-help', 'Choose the bridge on the Loads tab — selecting a standard Beaver Bridges product fills in the span, width, bearings and loads.'));
+  } else {
+    p.append(h('p', 'field-help', 'Retaining-wall mode: analysis per metre run (set L = 1000 mm) or for the full length; bridge, hydraulic and crossing checks are not run.'));
+  }
 }
 
 // --- Tab 2 -----------------------------------------------------------------------------
 
-function renderLoads(p, state, onChange) {
+const loadSig = (L) => JSON.stringify([L.trafficModels, L.reactions]);
+
+function applyLibrary(state, rangeKey, rowKey, loading) {
+  const d = libraryDesign(rangeKey, rowKey, loading);
+  if (!d) return false;
+  Object.assign(state.project, d.project);
+  state.loads.trafficModels = clone(d.trafficModels);
+  state.loads.reactions = clone(d.reactions);
+  state.loads.library = { range: rangeKey, row: rowKey, loading: d.loading, sig: null };
+  state.loads.library.sig = loadSig(state.loads);
+  // Widen the abutments if the bridge's bearings don't fit on them.
+  // Rounded to 800 so every bond pattern tiles without 400 × 400 pieces.
+  const Lmin = Math.ceil(defaultL_mm(state.project) / 800) * 800;
+  state.ends.forEach((en) => { if (en.arrangement.L_mm < Lmin) en.arrangement.L_mm = Lmin; });
+  return true;
+}
+
+function renderBridgeLibrary(state, onChange, api) {
+  const L = state.loads;
+  L.library = L.library || { range: 'bespoke', row: null, sig: null };
+  const fs = h('fieldset', 'lg-fieldset lg-library');
+  fs.append(h('legend', null, 'Bridge'));
+  const grid = h('div', 'lg-grid');
+  const f1 = h('div', 'field');
+  f1.append(h('label', null, 'Bridge type'));
+  const rangeSel = document.createElement('select');
+  rangeSel.setAttribute('aria-label', 'Bridge type');
+  [['bespoke', 'Bespoke — enter loads'], ...Object.entries(BRIDGE_RANGES).map(([k, v]) => [k, v.label])].forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; rangeSel.append(o); });
+  rangeSel.value = L.library.range || 'bespoke';
+  f1.append(rangeSel);
+  grid.append(f1);
+  const range = BRIDGE_RANGES[rangeSel.value];
+  const f2 = h('div', 'field');
+  let rowSel = null;
+  if (range) {
+    f2.append(h('label', null, 'Configuration'));
+    rowSel = document.createElement('select');
+    rowSel.setAttribute('aria-label', 'Bridge configuration');
+    const blank = document.createElement('option'); blank.value = ''; blank.textContent = '— choose span / width —'; rowSel.append(blank);
+    range.rows.forEach((x) => { const o = document.createElement('option'); o.value = x.key; o.textContent = x.label; rowSel.append(o); });
+    rowSel.value = L.library.range === rangeSel.value && L.library.row ? L.library.row : '';
+    f2.append(rowSel);
+    grid.append(f2);
+  }
+  let loadSel = null;
+  if (range) {
+    const f3 = h('div', 'field');
+    f3.append(h('label', null, 'Loading required'));
+    loadSel = document.createElement('select');
+    loadSel.setAttribute('aria-label', 'Loading required');
+    range.loadings.forEach((x) => { const o = document.createElement('option'); o.value = x.key; o.textContent = x.label; loadSel.append(o); });
+    loadSel.value = L.library.range === rangeSel.value && L.library.loading ? L.library.loading : range.defaultLoading;
+    f3.append(loadSel);
+    f3.append(h('div', 'field-help', 'CS 454 only: braking = 0.5 × the CS 454 reaction (total, split between fixed ends), as the SSVB spec method.'));
+    grid.append(f3);
+  }
+  fs.append(grid);
+
+  rangeSel.addEventListener('change', () => {
+    if (rangeSel.value === 'bespoke') { L.library = { range: 'bespoke', row: null, sig: null }; onChange(true); return; }
+    L.library = { range: rangeSel.value, row: null, sig: null };
+    onChange(true);
+  });
+  if (rowSel) {
+    rowSel.addEventListener('change', () => {
+      if (!rowSel.value) return;
+      applyLibrary(state, rangeSel.value, rowSel.value, loadSel.value);
+      onChange(true);
+      api.toast('Standard bridge loads and geometry applied');
+    });
+  }
+
+  if (loadSel) {
+    loadSel.addEventListener('change', () => {
+      L.library.loading = loadSel.value;
+      if (rowSel && rowSel.value) { applyLibrary(state, rangeSel.value, rowSel.value, loadSel.value); api.toast('Loading requirement applied'); }
+      onChange(true);
+    });
+  }
+  if (range && L.library.row) {
+    const d = libraryDesign(L.library.range, L.library.row, L.library.loading);
+    const modified = L.library.sig && L.library.sig !== loadSig(L);
+    fs.append(h('p', 'field-help', `<strong>${e(d.project.bridgeDescription)}</strong> — loading: <strong>${e(d.loadingLabel)}</strong>; span ${fmt(d.project.span, 3)} m (bearing to bearing), ${d.project.fixedEnd === 0 ? 'both ends fixed' : `fixed end ${d.project.fixedEnd}`}. Source: ${e(range.source)}. ${e(d.info || '')}`));
+    if (modified) fs.append(h('p', 'lg-mod', '⚠ Loads have been edited since the standard values were applied — the report will say so. Re-select the configuration to restore them.'));
+    const t = h('div', 'tbl-scroll');
+    t.innerHTML = `<table class="tbl-input tbl-readonly"><thead><tr><th>Characteristic load per abutment</th><th>Model</th><th class="num">Z kN</th><th class="num">X kN</th><th class="num">Y kN</th><th>Resisted at</th></tr></thead><tbody>${L.reactions.map((x) => `<tr><td>${e(x.name)}</td><td>${e(x.model || '—')}</td><td class="num">${fmt(x.Z, 1)}</td><td class="num">${x.X ? `±${fmt(x.X, 1)}` : '—'}</td><td class="num">${x.Y ? `±${fmt(x.Y, 1)}` : '—'}</td><td>${x.X ? (x.xFixedOnly && state.project.fixedEnd !== 0 ? 'fixed end' : 'each end') : ''}</td></tr>`).join('')}</tbody></table>`;
+    fs.append(t);
+    fs.append(h('p', 'field-help', `Vehicle models are checked one at a time (non-coexistent). Models marked “no accompanying traffic” exclude the approach surcharge and wind: ${state.loads.trafficModels.filter((m) => m.excludeSurchargeWind).map((m) => e(m.name)).join(', ') || 'none'}.`));
+    const notes = h('ul', 'lg-notes');
+    range.notes.forEach((n) => notes.append(h('li', null, e(n))));
+    fs.append(notes);
+  } else if (range) {
+    fs.append(h('p', 'field-help', 'Choose the span (and width) to load the characteristic reactions and bridge geometry.'));
+  } else {
+    fs.append(h('p', 'field-help', 'Bespoke: enter the bridge supplier’s reactions below.'));
+  }
+  return fs;
+}
+
+function renderLoads(p, state, onChange, api) {
   const L = state.loads;
   if (bridgeMode(state)) {
+    p.append(renderBridgeLibrary(state, onChange, api));
+    const det = h('details', 'lg-more');
+    det.open = !usingLibrary(state);
+    det.append(h('summary', null, usingLibrary(state) ? 'Edit loads (bespoke override of the standard values)' : 'Bridge loads (bespoke)'));
     const fs1 = h('fieldset', 'lg-fieldset');
-    fs1.append(h('legend', null, 'Traffic models (non-coexistent)'));
+    fs1.append(h('legend', null, 'Vehicle models (checked one at a time)'));
     fs1.append(createTable({
-      columns: [{ key: 'name', label: 'Model', type: 'text', width: '8rem', structural: true }, { key: 'excludeSurchargeWind', label: 'Exclude approach surcharge & wind when acting', type: 'checkbox' }],
+      columns: [{ key: 'name', label: 'Model', type: 'text', width: '8rem', structural: true }, { key: 'excludeSurchargeWind', label: 'No accompanying traffic (exclude surcharge & wind)', type: 'checkbox' }],
       rows: L.trafficModels, onChange: (x) => onChange(x.structural), newRow: () => ({ name: `M${L.trafficModels.length + 1}`, excludeSurchargeWind: false }), compact: true,
     }));
-    p.append(fs1);
+    det.append(fs1);
     const fs2 = h('fieldset', 'lg-fieldset');
-    fs2.append(h('legend', null, 'Bridge reactions (supplier schedule)'));
-    fs2.append(h('p', 'field-help', 'X longitudinal (+ End 1 → End 2), Y transverse, Z vertical downward, kN. Per-corner maxima summed for an abutment total are conservative for bearing. Paste rows straight from a spreadsheet.'));
+    fs2.append(h('legend', null, 'Characteristic reactions per abutment'));
+    fs2.append(h('p', 'field-help', 'X longitudinal (+ End 1 → End 2), Y transverse, Z vertical downward, kN. Paste rows straight from a spreadsheet.'));
     const models = L.trafficModels.map((m) => m.name);
     fs2.append(createTable({
       columns: [
-        { key: 'name', label: 'Case', type: 'text', width: '10rem' },
-        { key: 'group', label: 'Group', type: 'select', options: REACTION_GROUPS.map((g) => [g.value, g.label]), width: '10rem' },
+        { key: 'name', label: 'Load', type: 'text', width: '10rem' },
+        { key: 'group', label: 'Type', type: 'select', options: REACTION_GROUPS.map((g) => [g.value, g.label]), width: '10rem' },
         { key: 'model', label: 'Model', type: 'select', options: [['', '—'], ...models.map((m) => [m, m])] },
-        { key: 'basis', label: 'Basis', type: 'select', options: [['total', 'Abutment total'], ['perBearing', 'Per bearing (max per corner)']] },
-        { key: 'X', label: 'X', type: 'number', unit: 'kN' }, { key: 'Y', label: 'Y', type: 'number', unit: 'kN' }, { key: 'Z', label: 'Z', type: 'number', unit: 'kN' },
+        { key: 'basis', label: 'Basis', type: 'select', options: [['total', 'Per abutment'], ['perBearing', 'Per bearing']] },
+        { key: 'Z', label: 'Z', type: 'number', unit: 'kN' }, { key: 'X', label: 'X', type: 'number', unit: 'kN' }, { key: 'Y', label: 'Y', type: 'number', unit: 'kN' },
         { key: 'reversible', label: '±', type: 'checkbox' }, { key: 'xFixedOnly', label: 'X at fixed end only', type: 'checkbox' },
         { key: 'psi0', label: 'ψ0', type: 'number', step: 0.05 }, { key: 'psi1', label: 'ψ1', type: 'number', step: 0.05 }, { key: 'psi2', label: 'ψ2', type: 'number', step: 0.05 },
         { key: 'end', label: 'End', type: 'select', options: ['Both', 'End 1', 'End 2'] },
       ],
-      rows: L.reactions, onChange: (x) => onChange(x.structural), newRow: () => newReaction({ name: `Case ${L.reactions.length + 1}` }),
+      rows: L.reactions, onChange: (x) => onChange(x.structural), newRow: () => newReaction({ name: `Load ${L.reactions.length + 1}` }),
     }));
-    p.append(fs2);
+    det.append(fs2);
+    p.append(det);
   }
-  p.append(fieldset('Approach loads', FIELDS.loads, state, state, null, onChange));
+  p.append(fieldset('Approach', FIELDS.loads, state, state, null, onChange));
   if (bridgeMode(state)) {
+    const more = h('details', 'lg-more');
+    more.append(h('summary', null, 'Construction, hydraulic and accidental actions'));
     const fs3 = h('fieldset', 'lg-fieldset');
-    fs3.append(h('legend', null, 'Construction stage — launch / erection point loads'));
-    fs3.append(h('p', 'field-help', 'Stage (a) “abutment built and backfilled, no deck” is always checked. Enter launch loads in abutment axes (u landward from the front face, v along the face) with their source. Leave z blank for seat level.'));
+    fs3.append(h('legend', null, 'Launch / erection point loads'));
+    fs3.append(h('p', 'field-help', 'The “abutment built and backfilled, no deck” stage is always checked. Enter launch loads in abutment axes (u landward from the front face, v along the face). Leave z blank for seat level.'));
     fs3.append(createTable({
       columns: [{ key: 'name', label: 'Load', type: 'text', width: '8rem' }, { key: 'u', label: 'u', type: 'number', unit: 'm' }, { key: 'v', label: 'v', type: 'number', unit: 'm' }, { key: 'z', label: 'z', type: 'number', unit: 'm', nullable: true }, { key: 'Fz', label: 'Fz', type: 'number', unit: 'kN' }, { key: 'Fu', label: 'Fu', type: 'number', unit: 'kN' }, { key: 'Fv', label: 'Fv', type: 'number', unit: 'kN' }, { key: 'source', label: 'Source', type: 'text', width: '8rem' }],
-      rows: L.launch, onChange: (x) => onChange(true), newRow: () => ({ name: 'Launch nose', u: 1.2, v: 2.4, z: null, Fz: 100, Fu: 0, Fv: 0, source: '' }),
+      rows: L.launch, onChange: () => onChange(true), newRow: () => ({ name: 'Launch nose', u: 1.2, v: 2.4, z: null, Fz: 100, Fu: 0, Fv: 0, source: '' }),
     }));
-    p.append(fs3);
-    p.append(fieldset('Plant surcharge on bank (overall stability, construction case)', FIELDS.plant, state, state, null, onChange));
-    p.append(fieldset('Hydraulic actions (auto-activated when the abutment or pad lies below DFL)', FIELDS.hydraulic, state, state, null, onChange));
-    p.append(fieldset('Accidental', FIELDS.impact, state, state, null, onChange));
+    more.append(fs3);
+    more.append(fieldset('Plant surcharge on bank (overall stability, construction case)', FIELDS.plant, state, state, null, onChange));
+    more.append(fieldset('Hydraulic actions (applied automatically when the abutment or pad is below DFL)', FIELDS.hydraulic, state, state, null, onChange));
+    more.append(fieldset('Accidental', FIELDS.impact, state, state, null, onChange));
+    p.append(more);
   }
 }
 
@@ -299,7 +419,35 @@ function renderCrossing(p, state, end, idx, onChange, api) {
 
 function renderGround(p, state, end, idx, onChange, api) {
   const label = bridgeMode(state) ? end.label : 'Wall';
-  const ids = state.boreholes.filter((b) => b.end === `End ${idx + 1}` || b.end === 'Both').map((b) => b.id);
+  const endName = `End ${idx + 1}`;
+  p.append(h('p', 'field-help lg-lead', `Enter each borehole for ${e(label)} as it appears on the log: the depth, the soil and the SPT N value. The tool corrects N, derives φ′ or cu, sets characteristic values and builds the design profile.`));
+  const mine = state.boreholes.map((b, i) => [b, i]).filter(([b]) => b.end === endName || b.end === 'Both');
+  if (!mine.length) p.append(h('p', 'lg-mod', `No boreholes for ${e(label)} yet — add one below${end.groundMode === 'manual' ? ' (a manual design profile is currently in use — see Advanced)' : ''}.`));
+  mine.forEach(([bh, bi]) => p.append(boreholeCard(state, bh, bi, end, onChange)));
+  const addB = h('button', 'btn btn-sm', `+ Add borehole for ${e(label)}`);
+  addB.type = 'button';
+  addB.addEventListener('click', () => {
+    const others = state.boreholes.map((b) => b.id);
+    let n = state.boreholes.length + 1;
+    while (others.includes(`BH${String(n).padStart(2, '0')}`)) n++;
+    state.boreholes.push(newSimpleBorehole({ id: `BH${String(n).padStart(2, '0')}`, end: endName, chainage: end.frontChainage, GL: end.frontGroundOverride ?? 100 }));
+    end.groundMode = 'boreholes';
+    onChange(true);
+  });
+  p.append(addB);
+
+  const out = api.getOutput()?.design?.ends?.[idx];
+  if (out) {
+    const fsP = h('fieldset', 'lg-fieldset');
+    fsP.append(h('legend', null, `${label} — design profile used`));
+    fsP.innerHTML += `<div class="tbl-scroll"><table class="tbl-input tbl-readonly"><thead><tr><th>#</th><th>Stratum</th><th>From–to (mAOD)</th><th class="num">γ</th><th class="num">φ′k °</th><th class="num">cu,k kPa</th><th class="num">N60</th><th>Basis</th></tr></thead><tbody>${out.ground.layers.map((l, i) => `<tr><td>${i}</td><td>${e(l.desc || l.cls)}${l.unsuitable ? ' ⚠ unsuitable' : ''}</td><td>${fmt(l.topLevel, 2)} – ${fmt(l.baseLevel, 2)}</td><td class="num">${fmt(l.gamma, 1)}</td><td class="num">${fmt(l.phi, 1)}</td><td class="num">${l.cu ? fmt(l.cu, 0) : '—'}</td><td class="num">${l.N60 !== null && l.N60 !== undefined ? fmt(l.N60, 1) : '—'}</td><td>${e(l.char?.phi?.method || l.char?.cu?.method || l.source || '')}</td></tr>`).join('')}</tbody></table></div><p class="field-help">Design borehole ${e(out.ground.designId || 'manual profile')}; groundwater ${Number.isFinite(out.ground.gw.level) ? `${fmt(out.ground.gw.level, 2)} mAOD` : 'deep'}. Formation ${fmt(out.levels.formation, 2)} mAOD on ${e(out.geom.founding.desc || out.geom.founding.cls)}.</p>`;
+    p.append(fsP);
+  }
+
+  // Advanced options, collapsed.
+  const adv = h('details', 'lg-more');
+  adv.append(h('summary', null, 'Advanced ground options (correlations, characteristic values, overrides, manual profile)'));
+  const ids = mine.map(([b]) => b.id);
   const opts = [
     { path: 'groundMode', label: 'Ground model source', type: 'select', options: [['boreholes', 'Boreholes (SPT)'], ['manual', 'Manual design profile']] },
     { path: 'designBorehole', label: 'Design borehole', type: 'select', options: [['auto', 'Auto — lowest cautious parameter at founding level'], ...ids.map((i) => [i, i])], showIf: (s, en) => en.groundMode === 'boreholes' },
@@ -310,21 +458,20 @@ function renderGround(p, state, end, idx, onChange, api) {
     { path: 'groundOptions.f2', label: 'Stroud f2 for mv', unit: 'MN/m²', min: 0.1, step: 0.01 },
     { path: 'groundOptions.overconsolidated', label: 'Granular soils overconsolidated (E′ = 2·N60)', type: 'checkbox' },
   ];
-  p.append(fieldset(`${label} — design options`, opts, end, state, end, onChange));
-
+  adv.append(fieldset(`${label} — correlations and characteristic values`, opts, end, state, end, onChange));
   const fsO = h('fieldset', 'lg-fieldset');
   fsO.append(h('legend', null, `${label} — parameter overrides (justification mandatory)`));
+  fsO.append(h('p', 'field-help', 'Use for lab results (e.g. c′ and φ′ from triaxial tests) or to allow a stratum as founding. Stratum numbers refer to the design profile above.'));
   end.groundOptions.overrides = end.groundOptions.overrides || [];
   fsO.append(createTable({
     columns: [
-      { key: 'stratumIndex', label: 'Stratum no. (design profile, 0 = top)', type: 'number', step: 1 },
+      { key: 'stratumIndex', label: 'Stratum #', type: 'number', step: 1 },
       { key: 'param', label: 'Parameter', type: 'select', options: [['phi', 'φ′'], ['c', 'c′'], ['cu', 'cu'], ['mv', 'mv'], ['E', 'E′'], ['gamma', 'γ'], ['gammaSat', 'γsat'], ['rockRd', 'Rock design bearing (kPa)'], ['founding', 'Allow as founding stratum']] },
       { key: 'value', label: 'Value', type: 'number', nullable: true }, { key: 'justification', label: 'Justification', type: 'text', width: '14rem' },
     ],
-    rows: end.groundOptions.overrides, onChange: () => onChange(false), newRow: () => ({ stratumIndex: 0, param: 'phi', value: null, justification: '' }), compact: true,
+    rows: end.groundOptions.overrides, onChange: () => onChange(false), newRow: () => ({ stratumIndex: 1, param: 'phi', value: null, justification: '' }), compact: true,
   }));
-  p.append(fsO);
-
+  adv.append(fsO);
   if (end.groundMode === 'manual') {
     const fsM = h('fieldset', 'lg-fieldset');
     fsM.append(h('legend', null, `${label} — manual design profile`));
@@ -339,28 +486,39 @@ function renderGround(p, state, end, idx, onChange, api) {
       ],
       rows: end.manualProfile, onChange: () => onChange(false), newRow: () => ({ topLevel: 95, baseLevel: 90, cls: 'Granular', desc: '', gamma: 19, gammaSat: 20, phi: 32, c: 0, cu: null, mv: null, N60: 20, granType: 'Sand', rockRd: null }),
     }));
-    p.append(fsM);
+    adv.append(fsM);
   }
+  p.append(adv);
+}
 
-  // Boreholes (all ends).
-  const fsB = h('fieldset', 'lg-fieldset');
-  fsB.append(h('legend', null, 'Boreholes'));
-  fsB.append(h('p', 'field-help', 'Assign each borehole to an end (or both). SPT results accept “N=15”, “15”, “50/113”, “50 for 113mm” and “50 (24 for 37mm/50 for 113mm)”. Energy ratio Er from the hammer calibration (60% assumed if blank, with a warning).'));
-  state.boreholes.forEach((bh, bi) => {
-    const d = h('details', 'lg-bh');
-    if (bh.end === `End ${idx + 1}` || bh.end === 'Both') d.open = bi === state.boreholes.findIndex((b) => b.end === `End ${idx + 1}` || b.end === 'Both');
-    d.append(h('summary', null, `${e(bh.id)} — ${e(bh.end)} · GL ${fmt(bh.GL, 2)} mAOD · ${bh.strata.length} strata · ${bh.spt.length} SPTs`));
-    const hdr = [
-      { path: 'id', label: 'Id', type: 'text' }, { path: 'end', label: 'End', type: 'select', options: [['End 1', 'End 1'], ['End 2', 'End 2'], ['Both', 'Both']] },
-      { path: 'chainage', label: 'Chainage', unit: 'm' }, { path: 'offset', label: 'Offset', unit: 'm' }, { path: 'GL', label: 'Ground level', unit: 'mAOD', step: 0.001 },
-      { path: 'finalDepth', label: 'Final depth', unit: 'm' }, { path: 'strike', label: 'Water strike', unit: 'm bgl', nullable: true }, { path: 'roseTo', label: 'Rose to', unit: 'm bgl', nullable: true },
-      { path: 'standing', label: 'Standing level', unit: 'm bgl', nullable: true }, { path: 'Er', label: 'SPT energy ratio Er', unit: '%', nullable: true },
-    ];
-    d.append(fieldset('Header', hdr, bh, state, end, (s) => onChange(s)));
-    const st = h('div', 'lg-sub');
-    st.append(h('h4', 'lg-h4', 'Strata'));
+function boreholeCard(state, bh, bi, end, onChange) {
+  const fs = h('fieldset', 'lg-fieldset lg-bhcard');
+  fs.append(h('legend', null, `${e(bh.id)}${bh.end === 'Both' ? ' (both ends)' : ''}`));
+  const hdr = [
+    { path: 'id', label: 'Borehole', type: 'text' },
+    { path: 'GL', label: 'Ground level', unit: 'mAOD', step: 0.01 },
+    { path: 'standing', label: 'Groundwater depth (blank = not met)', unit: 'm bgl', step: 0.1, nullable: true },
+    { path: 'chainage', label: 'Chainage (for drawings)', unit: 'm', step: 0.1 },
+    { path: 'end', label: 'Use for', type: 'select', options: [['End 1', 'End 1'], ['End 2', 'End 2'], ['Both', 'Both ends']] },
+    { path: 'Er', label: 'SPT hammer energy Er (blank = 60%)', unit: '%', step: 1, nullable: true },
+  ];
+  fs.append(fieldset('Borehole', hdr, bh, state, end, (s) => onChange(s), 'lg-plain'));
+  if (bh.simple) {
+    fs.append(h('p', 'field-help', 'One row per log entry: depth below ground, the soil as logged and the SPT N as written (e.g. 15, or 50/75 for a refusal). A row with no N marks the top of a new soil. Paste straight from a spreadsheet.'));
+    fs.append(createTable({
+      columns: [
+        { key: 'depth', label: 'Depth', type: 'number', unit: 'm', step: 0.1 },
+        { key: 'soil', label: 'Soil', type: 'select', options: SIMPLE_SOILS },
+        { key: 'N', label: 'SPT N', type: 'text', width: '6rem', validate: (v) => { if (v === null || v === undefined || String(v).trim() === '') return ''; const r2 = parseSPT(v); return r2.error ? 'Not a readable SPT result' : ''; } },
+        { key: 'note', label: 'Log description (optional)', type: 'text', width: '12rem' },
+      ],
+      rows: bh.simpleRows, onChange: () => onChange(false), compact: true, allowDuplicate: false,
+      newRow: () => { const last = bh.simpleRows[bh.simpleRows.length - 1]; return { depth: last ? Number(last.depth) + 1 : 0, soil: last ? last.soil : 'Sand', N: '', note: '' }; },
+    }));
+  } else {
     bh.strata.forEach((s) => { s.lab = s.lab || {}; });
-    st.append(createTable({
+    fs.append(h('h4', 'lg-h4', 'Strata (detailed entry)'));
+    fs.append(createTable({
       columns: [
         { key: 'top', label: 'Top', type: 'number', unit: 'm' }, { key: 'base', label: 'Base', type: 'number', unit: 'm' }, { key: 'desc', label: 'Description', type: 'text', width: '12rem' },
         { key: 'cls', label: 'Class', type: 'select', options: STRATUM_CLASSES }, { key: 'PI', label: 'PI', type: 'number', nullable: true }, { key: 'granType', label: 'Granular type', type: 'select', options: GRANULAR_TYPES },
@@ -368,34 +526,30 @@ function renderGround(p, state, end, idx, onChange, api) {
       ],
       rows: bh.strata, onChange: () => onChange(false), newRow: () => { const last = bh.strata[bh.strata.length - 1]; return { top: last ? last.base : 0, base: (last ? last.base : 0) + 1, desc: '', cls: 'Granular', PI: null, granType: 'Sand', lab: {} }; },
     }));
-    st.append(h('h4', 'lg-h4', 'SPT results'));
-    st.append(createTable({
-      columns: [
-        { key: 'depth', label: 'Depth', type: 'number', unit: 'm' }, { key: 'type', label: 'S/C', type: 'select', options: ['S', 'C'] }, { key: 'result', label: 'Result', type: 'text', width: '14rem' },
-        { key: '_n', label: 'Parsed N', render: (row) => { const r = parseSPT(row.result); return h('span', r.error ? 'lg-bad' : 'muted', r.error ? 'unreadable' : `${fmt(r.N, 1)}${r.refusal ? ' (extrap.)' : ''}`); } },
-      ],
-      rows: bh.spt, onChange: (x) => onChange(true), newRow: () => ({ depth: (bh.spt[bh.spt.length - 1]?.depth ?? 0) + 1, type: 'S', result: '' }), compact: true,
+    fs.append(h('h4', 'lg-h4', 'SPT results'));
+    fs.append(createTable({
+      columns: [{ key: 'depth', label: 'Depth', type: 'number', unit: 'm' }, { key: 'type', label: 'S/C', type: 'select', options: ['S', 'C'] }, { key: 'result', label: 'Result', type: 'text', width: '14rem', validate: (v) => (parseSPT(v).error ? 'Not a readable SPT result' : '') }],
+      rows: bh.spt, onChange: () => onChange(false), newRow: () => ({ depth: (bh.spt[bh.spt.length - 1]?.depth ?? 0) + 1, type: 'S', result: '' }), compact: true,
     }));
-    const rm = h('button', 'btn secondary btn-sm', `Remove ${e(bh.id)}`);
-    rm.type = 'button';
-    rm.addEventListener('click', () => { if (window.confirm(`Remove borehole ${bh.id}?`)) { state.boreholes.splice(bi, 1); onChange(true); } });
-    st.append(rm);
-    d.append(st);
-    fsB.append(d);
-  });
-  const addB = h('button', 'btn secondary btn-sm', '+ Add borehole');
-  addB.type = 'button';
-  addB.addEventListener('click', () => { state.boreholes.push(newBorehole({ id: `BH${String(state.boreholes.length + 1).padStart(2, '0')}`, end: `End ${idx + 1}`, chainage: end.frontChainage, GL: end.frontGroundOverride ?? 100 })); end.groundMode = 'boreholes'; onChange(true); });
-  fsB.append(addB);
-  p.append(fsB);
-
-  const out = api.getOutput()?.design?.ends?.[idx];
-  if (out) {
-    const fsP = h('fieldset', 'lg-fieldset');
-    fsP.append(h('legend', null, `${label} — derived design profile`));
-    fsP.innerHTML += `<div class="tbl-scroll"><table class="tbl-input tbl-readonly"><thead><tr><th>#</th><th>Stratum</th><th>Class</th><th>Top</th><th>Base</th><th>γ</th><th>φ′k</th><th>cu,k</th><th>N60</th><th>Basis</th></tr></thead><tbody>${out.ground.layers.map((l, i) => `<tr><td>${i}</td><td>${e(l.desc || '')}</td><td>${e(l.cls)}${l.unsuitable ? ' ⚠' : ''}</td><td>${fmt(l.topLevel, 3)}</td><td>${fmt(l.baseLevel, 3)}</td><td>${fmt(l.gamma, 1)}</td><td>${fmt(l.phi, 1)}</td><td>${l.cu ? fmt(l.cu, 0) : '—'}</td><td>${l.N60 !== null && l.N60 !== undefined ? fmt(l.N60, 1) : '—'}</td><td>${e(l.char?.phi?.method || l.char?.cu?.method || l.source || '')}</td></tr>`).join('')}</tbody></table></div><p class="field-help">Design borehole: ${e(out.ground.designId || 'manual')}. Groundwater ${Number.isFinite(out.ground.gw.level) ? fmt(out.ground.gw.level, 3) : 'deep'} mAOD.</p>`;
-    p.append(fsP);
   }
+  const bar = h('div', 'tbl-bar');
+  if (bh.simple) {
+    const adv = h('button', 'btn secondary btn-sm', 'Detailed entry (PI, lab values, seating blows)');
+    adv.type = 'button';
+    adv.addEventListener('click', () => {
+      if (!window.confirm('Switch this borehole to detailed strata + SPT entry? The simple rows are converted and the simple view is not kept.')) return;
+      const x = expandSimpleBorehole(bh);
+      bh.strata = x.strata; bh.spt = x.spt; bh.finalDepth = x.finalDepth; bh.simple = false;
+      onChange(true);
+    });
+    bar.append(adv);
+  }
+  const rm = h('button', 'btn secondary btn-sm', `Remove ${e(bh.id)}`);
+  rm.type = 'button';
+  rm.addEventListener('click', () => { if (window.confirm(`Remove borehole ${bh.id}?`)) { state.boreholes.splice(bi, 1); onChange(true); } });
+  bar.append(rm);
+  fs.append(bar);
+  return fs;
 }
 
 function labCell(row, onChange) {
@@ -645,8 +799,9 @@ export function renderResults(panel, output, state, api) {
     rows.forEach((u) => {
       const r = h('button', 'lg-bar-row');
       r.type = 'button';
-      const cls = u.util > 1 ? 'fail' : u.util > 0.9 ? 'near' : 'ok';
-      r.innerHTML = `<span class="lg-bar-label">${e(u.id)} ${e(u.title)}</span><span class="lg-bar-track"><span class="lg-bar-fill ${cls}" style="width:${Math.min(100, (u.util / 1.2) * 100)}%"></span><span class="lg-bar-limit"></span></span><span class="lg-bar-val ${cls}">${fmt(u.util, 3)} ${u.util > 1 ? 'FAIL' : u.util > 0.9 ? 'NEAR' : 'OK'}</span>`;
+      const cls = u.info ? (u.flag ? 'near' : 'ok') : u.util > 1 ? 'fail' : u.util > 0.9 ? 'near' : 'ok';
+      const val = u.info ? (u.flag ? 'CHECK DETAIL' : 'OK') : `${fmt(u.util, 3)} ${u.util > 1 ? 'FAIL' : u.util > 0.9 ? 'NEAR' : 'OK'}`;
+      r.innerHTML = `<span class="lg-bar-label">${e(u.id)} ${e(u.title)}</span><span class="lg-bar-track"><span class="lg-bar-fill ${cls}" style="width:${Math.min(100, (u.util / 1.2) * 100)}%"></span><span class="lg-bar-limit"></span></span><span class="lg-bar-val ${cls}">${val}</span>`;
       if (u.gov) r.title = `Governing: ${u.gov}`;
       r.addEventListener('click', () => { const t = document.getElementById(`rep-e${x.endIdx + 1}-${u.id.replace(/[a-d]$/, '')}`) || document.getElementById(`rep-e${x.endIdx + 1}-${u.id}`); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
       list.append(r);

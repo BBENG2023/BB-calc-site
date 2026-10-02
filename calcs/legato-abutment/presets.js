@@ -1,7 +1,7 @@
 // presets.js — synthetic example states. No project data: every value is
 // either synthetic or taken from the public Elite retaining wall guide.
 
-import { blankState, newEnd, newCourse, newBorehole, newReaction, clone } from './schema.js';
+import { blankState, newEnd, newCourse, newBorehole, newSimpleBorehole, newReaction, clone } from './schema.js';
 import { FACTOR_PRESETS } from '../../js/shared-data.js';
 
 function setPreset(s, key) {
@@ -18,6 +18,7 @@ export function eliteExample() {
   setPreset(s, 'Legacy');
   s.basis.weightBasis = 'gross';
   s.basis.grossGamma = 23.0;
+  s.basis.nibBasis = 'none'; // Elite example values are friction only
   s.basis.nearSlopeFactor = false;
   s.loads.surcharge = 10;
   s.loads.reactions = [];
@@ -50,6 +51,7 @@ export function v2Synthetic() {
   s.meta.presetName = 'V2 synthetic 4-course bank seat (validation)';
   setPreset(s, 'A1');
   s.basis.weightBasis = 'stated';
+  s.basis.nibBasis = 'none'; // V2 figures are friction only
   s.basis.nearSlopeFactor = false;
   s.project.bearingHeight = 0;
   s.project.span = 11.2;
@@ -124,7 +126,31 @@ export function bbStandard(o = {}) {
   s.project.overallLength = +(s.project.span + 0.5).toFixed(3);
   // Synthetic effective-stress parameters for the End 2 clays (as if from
   // triaxial testing): c′ = 5 kPa, φ′ = 26°.
-  s.boreholes.filter((b) => b.end === 'End 2').forEach((b) => b.strata.forEach((st) => { if (st.cls === 'Cohesive') st.lab = { c: 5, phi: 26 }; }));
+  const row = (depth, soil, N = '', note = '') => ({ depth, soil, N, note });
+  s.boreholes = [
+    newSimpleBorehole({ id: 'BH01', end: 'End 1', GL: 100.55, standing: 1.9, Er: 64, finalDepth: 8, simpleRows: [
+      row(0, 'Topsoil'), row(0.3, 'Clay/silt', '', 'Soft brown sandy CLAY'), row(0.8, 'Clay/silt', '5'),
+      row(1.1, 'Gravel', '', 'Medium dense to dense brown sandy GRAVEL'), row(1.5, 'Gravel', '18'), row(2.5, 'Gravel', '24'), row(3.5, 'Gravel', '31'), row(4.5, 'Gravel', '50 (24 for 37mm/50 for 113mm)'),
+      row(5.5, 'Clay/silt', '', 'Stiff grey CLAY'), row(6.0, 'Clay/silt', '22'), row(7.5, 'Clay/silt', '26'),
+    ] }),
+    newSimpleBorehole({ id: 'BH02', end: 'End 1', GL: 100.5, standing: 1.8, Er: 64, finalDepth: 8, simpleRows: [
+      row(0, 'Topsoil'), row(0.25, 'Clay/silt', '', 'Soft brown sandy CLAY'),
+      row(1.0, 'Gravel', '', 'Medium dense brown sandy GRAVEL'), row(1.2, 'Gravel', '16'), row(2.0, 'Gravel', '21'), row(3.0, 'Gravel', '27'), row(4.0, 'Gravel', '50/150'), row(5.0, 'Gravel', '35'),
+      row(6.0, 'Clay/silt', '', 'Stiff grey CLAY'), row(6.5, 'Clay/silt', '24'),
+    ] }),
+    newSimpleBorehole({ id: 'BH03', end: 'End 2', GL: 100.5, standing: 1.6, Er: 64, finalDepth: 10, simpleRows: [
+      row(0, 'Topsoil'), row(0.3, 'Clay/silt', '', 'Firm becoming stiff brown slightly sandy CLAY'), row(1.0, 'Clay/silt', '12'), row(1.8, 'Clay/silt', '15'), row(2.6, 'Clay/silt', '17'),
+      row(3.5, 'Clay/silt', '22'), row(5.0, 'Clay/silt', '27'), row(6.5, 'Clay/silt', '31'), row(8.0, 'Clay/silt', '36'),
+    ] }),
+    newSimpleBorehole({ id: 'BH04', end: 'End 2', GL: 100.45, standing: 1.5, Er: 64, finalDepth: 8, simpleRows: [
+      row(0, 'Topsoil'), row(0.3, 'Clay/silt', '', 'Firm brown slightly sandy CLAY'), row(1.0, 'Clay/silt', '11'), row(2.0, 'Clay/silt', '14'),
+      row(3.0, 'Clay/silt', '18'), row(4.5, 'Clay/silt', '23'), row(6.0, 'Clay/silt', '28'),
+    ] }),
+  ];
+  e2.groundOptions.overrides = [
+    { stratumIndex: 1, param: 'c', value: 5, justification: 'Synthetic example — as if from CU triaxial tests' },
+    { stratumIndex: 1, param: 'phi', value: 26, justification: 'Synthetic example — as if from CU triaxial tests' },
+  ];
   s.boreholes.forEach((b) => { b.chainage = +(b.end === 'End 1' ? e1.frontChainage + (b.id === 'BH01' ? -5.0 : 1.2) : e2.frontChainage + (b.id === 'BH03' ? 5.0 : -1.2)).toFixed(2); });
   return s;
 }

@@ -10,9 +10,53 @@ import { UNSUITABLE } from './schema.js';
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 const isNum = (v) => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v));
 
+const SOIL_MAP = {
+  Sand: { cls: 'Granular', granType: 'Sand' },
+  Gravel: { cls: 'Granular', granType: 'Gravel' },
+  'Silty/fine sand': { cls: 'Granular', granType: 'Fine/silty sand' },
+  'Clay/silt': { cls: 'Cohesive', granType: 'Sand' },
+  'Made ground': { cls: 'Made ground', granType: 'Sand' },
+  Topsoil: { cls: 'Topsoil', granType: 'Sand' },
+  Peat: { cls: 'Peat', granType: 'Sand' },
+  'Weathered rock': { cls: 'Weathered rock', granType: 'Sand' },
+  Rock: { cls: 'Rock', granType: 'Sand' },
+};
+
+// Simple entry → strata + SPT. Consecutive rows of the same soil form one
+// stratum. The boundary between strata is the depth of the first row of the
+// lower soil if that row has no N (a logged stratum change), otherwise
+// midway between the adjacent rows.
+export function expandSimpleBorehole(bh) {
+  if (!bh.simple) return bh;
+  const rows = (bh.simpleRows || []).filter((x) => isNum(x.depth)).map((x) => ({ ...x, depth: Number(x.depth) })).sort((a, b) => a.depth - b.depth);
+  const hasN = (x) => x.N !== null && x.N !== undefined && String(x.N).trim() !== '';
+  const groups = [];
+  rows.forEach((x) => {
+    const last = groups[groups.length - 1];
+    if (last && last.soil === x.soil) last.rows.push(x);
+    else groups.push({ soil: x.soil, rows: [x] });
+  });
+  const lastDepth = rows.length ? rows[rows.length - 1].depth : 1;
+  const base = Math.max(isNum(bh.finalDepth) ? Number(bh.finalDepth) : 0, lastDepth + 0.5);
+  const strata = groups.map((g, i) => {
+    let top = 0;
+    if (i > 0) {
+      const prev = groups[i - 1].rows[groups[i - 1].rows.length - 1].depth;
+      const first = g.rows[0];
+      top = hasN(first) ? (prev + first.depth) / 2 : first.depth;
+    }
+    const m = SOIL_MAP[g.soil] || SOIL_MAP.Sand;
+    const notes = g.rows.map((x) => x.note).filter(Boolean);
+    return { top, base: 0, desc: notes[0] || g.soil, cls: m.cls, PI: null, granType: m.granType, lab: {} };
+  });
+  strata.forEach((s, i) => { s.base = i < strata.length - 1 ? strata[i + 1].top : base; });
+  const spt = rows.filter(hasN).map((x) => ({ depth: x.depth, type: 'S', result: String(x.N).trim() }));
+  return { ...bh, finalDepth: base, strata, spt };
+}
+
 export function boreholesForEnd(state, endIdx) {
   const label = `End ${endIdx + 1}`;
-  return (state.boreholes || []).filter((b) => b.end === label || b.end === 'Both');
+  return (state.boreholes || []).filter((b) => b.end === label || b.end === 'Both').map(expandSimpleBorehole);
 }
 
 // Groundwater level (mAOD) from a borehole header: highest of standing and

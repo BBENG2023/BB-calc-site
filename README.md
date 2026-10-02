@@ -98,6 +98,36 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.4.2** — Legato abutment designer: nib interlock fixed to the BB
+  basis, CLP Structures calc 302 for Elite (21.4 kN per nib, half
+  effective); Elite's 32 kN sheet removed. BCB bearing layout taken from
+  BB200-CALC-700-001 §3.1 (bearing span = L − 0.355 m, one bearing per
+  1.5 m deck unit).
+- **v1.4.1** — Legato abutment designer: **nib interlock relied on by
+  default**, with a selectable basis — CLP Structures calc 302 for Elite
+  (21.4 kN per nib, half effective; default), Elite shear force sheet (32 kN
+  per nock, γ = 1.5 by BB), EC2 BB judgement or user-defined — counted at SLS
+  and ULS for male nibs under a block above. Standard bridges gain a
+  **loading required** option (CS 454 / CS 454 + SV-80 / CS 454 + SV-80
+  DAF + OF for SSVB; BCB and Waagner-Biro equivalents); with CS 454 only,
+  braking = 0.5 × CS 454 R per the SSVB method. SSVB plain SV-80 reactions
+  added.
+- **v1.4.0** — Legato abutment designer simplified after trial use.
+  **Standard bridge loads built in** (`js/bridge-library.js`): pick SSVB
+  (BB200-01-RP-200-001 P03 §7, 4–12 m), BCB (BB200-CALC-700-001 P01
+  load table, 1.5–4.0 m × 1.5–6.0 m) or Waagner-Biro panel bridge
+  (T18-41-548-02-201 rev 00, 12.192–60.96 m) and a span/width — the
+  characteristic reactions, vehicle models, bearings, span and "both
+  ends fixed" are filled in and printed with their source. Bespoke loads
+  remain available, and editing standard loads is flagged on the report.
+  **Simple borehole entry**: depth, soil and SPT N exactly as on the log
+  (refusals such as 50/75 accepted); strata are built automatically and
+  the detailed strata/lab entry is still available per borehole.
+  Rarely used inputs (construction, hydraulic, accidental actions,
+  correlation choices, overrides, manual profile, bridge geometry when a
+  standard bridge is selected) are collapsed. Anchor edge-distance (L2)
+  is reported as a detailing flag rather than driving the governing
+  utilisation.
 - **v1.3.0** — Added calc 11, **Bridge Abutment — Legato Interlocking
   Block (Bank Seat)**, in a new catalogue category *Bridge Substructures —
   Precast Block Abutments*. Designs and checks dry-laid Elite Legato bank

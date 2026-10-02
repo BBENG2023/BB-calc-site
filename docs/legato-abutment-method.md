@@ -49,12 +49,45 @@ undrained rapid drawdown; scour depth calculation; Vee/Duo blocks; DXF;
   smooth"); block on Type 1 δ = ⅔φ′cv; Type 1 on formation δ = φ′ of the
   weaker; precast blocks directly on soil δ = ⅔φ′k; cast-in-place base
   δ = φ′k. tan δd = tan δk / γφ′.
-- **Nib shear (opt-in, BB judgement):** VRd,nib = fctd,pl × 195² / 1.5 ≈
-  25.4 kN per nib × η_eng (default 0.5), counting only male nibs of the lower
-  course under upper-course blocks.
+- **Nib interlock (relied on by default):** resistance per counted nib =
+  V × η / γ, counting only male nibs of the lower course that sit under a
+  block of the course above, added to friction at SLS (no-slip) and ULS.
+  BB basis: **CLP Structures calc 302 for Elite** — 0.7 × 0.15 × √40 =
+  0.66 N/mm² on 180 × 180 = 21.4 kN allowable, half the nibs effective
+  (10.7 kN per counted nib; 85.5 kN per LG8). Friction-only and
+  user-defined remain selectable; Elite's 32 kN-per-nock sheet is not used. The ballast wall (on
+  bedding grout over a female-only seat) and blocks on the pad have no nibs.
+  Engagement depends on correct seating (Elite EPC-DRG-268, 7.5 mm clearance
+  each side).
 - **Factor presets:** EN 1990 A2 (bridges, default), A1 / EC7 Annex A,
   Legacy (unity + FoS), User. All values editable; edits are listed on the
   printed design basis.
+
+## 3a. Standard bridge loads (js/bridge-library.js)
+
+| Range | Source | Mapping to per-abutment reactions |
+|---|---|---|
+| SSVB | BB200-01-RP-200-001 P03 §7 | G = DL/2; vehicle R as tabulated (SV-80, A35G, A40G with DAF + OF); braking total/2 and transverse at each end (both fixed); wind total/2. |
+| BCB | BB200-CALC-700-001 P01 load table and §3 geometry | Span (bearing to bearing) = L − 0.355 m (bearings 177.5 mm in from each deck end, §3.1); one bearing per 1.5 m deck unit. G = DL/2; CS 454, SV-80/100/150/196 R, plus the 2-lane envelope for 6.0 m width; braking Opt A total/2 at each end (both fixed); wind total/2. |
+| Waagner-Biro | T18-41-548-02-201 rev 00 | G = DL/2 (DL from tabulated mass); vehicles 2 × corner value; braking and wind along at the fixed end; wind across /2; sliding end carries bearing friction. |
+
+Loading required (per range): SSVB and BCB — CS 454 only, CS 454 + SV-80,
+and CS 454 + SV-80 (DAF + OF) for SSVB or the SV-80 to SV-196 envelope for
+BCB; Waagner-Biro — Model 2, + SV-80, + A35G. Each vehicle model is checked
+on its own; SV and off-highway vehicles have no accompanying traffic
+(approach surcharge and wind excluded). Braking with normal traffic follows
+the SSVB method: total = 0.5 × the per-abutment reaction (transverse
+0.125 × R for SSVB). Braking with SV-80 uses the tabulated values (SSVB:
+0.5 × SV-80 R, also used with the DAF + OF reaction; BCB: Option A;
+Waagner-Biro: 390 kN at the fixed end). Check items:
+the BCB table differs from the information drawing BB200-01-DR-0100-001
+P01; the Waagner-Biro values were read from a reduced image; the
+Waagner-Biro 12.192 m dead load (300 kN v 10 216 kg) is inconsistent.
+
+Ground input: each borehole is entered as depth / soil / SPT N rows; the
+tool forms strata from consecutive rows of the same soil (boundary at a
+row with no N, otherwise midway between tests) and treats every N as an
+SPT test at that depth.
 
 ## 4. Ground model (ground.js)
 
@@ -167,7 +200,10 @@ undrained rapid drawdown; scour depth calculation; Vee/Duo blocks; DXF;
    verdict.
 3. **Approach surcharge** is part of the leading traffic group (same γQ) —
    this is what reproduces the V2 figures.
-4. **I4b** loads the seat with braking and the earth on its own height only;
+4. **Nib interlock** is relied on by default (CLP basis) — the brief's
+   original "friction alone at SLS" rule is replaced by friction plus nib
+   interlock at the user's instruction.
+5. **I4b** loads the seat with braking and the earth on its own height only;
    the ballast wall and its own thrust are the separate I4a body.
 5. **Continuous joint planes** are checked in sliding only (part check);
    toppling of parts is not implemented.

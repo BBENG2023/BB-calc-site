@@ -2,7 +2,7 @@
 // limits, tooltips with sources) and small state helpers. Units: levels in
 // mAOD, chainages/spans in m, block/course geometry in mm, forces in kN.
 
-import { FACTOR_PRESETS } from '../../js/shared-data.js';
+import { FACTOR_PRESETS, NIB_BASES } from '../../js/shared-data.js';
 
 export const SCHEMA_VERSION = 1;
 
@@ -100,6 +100,25 @@ export function newEnd(n) {
   };
 }
 
+// Simple borehole entry (default): one row per log entry — depth, soil and
+// SPT N as written on the log. A row with no N marks the top of that soil.
+export const SIMPLE_SOILS = ['Sand', 'Gravel', 'Silty/fine sand', 'Clay/silt', 'Made ground', 'Topsoil', 'Peat', 'Weathered rock', 'Rock'];
+
+export function newSimpleBorehole(o = {}) {
+  return {
+    id: 'BH1', end: 'End 1', chainage: 0, offset: 0, GL: 100.0, finalDepth: null,
+    strike: null, roseTo: null, standing: null, Er: null, simple: true,
+    simpleRows: [
+      { depth: 0.0, soil: 'Topsoil', N: '', note: '' },
+      { depth: 1.0, soil: 'Sand', N: '12', note: '' },
+      { depth: 2.0, soil: 'Sand', N: '18', note: '' },
+      { depth: 3.0, soil: 'Sand', N: '22', note: '' },
+    ],
+    strata: [], spt: [],
+    ...o,
+  };
+}
+
 export function newBorehole(o = {}) {
   return {
     id: 'BH1', end: 'End 1', chainage: 0, offset: 0, GL: 100.0, finalDepth: 10,
@@ -149,8 +168,12 @@ export function blankState() {
       factors: clone(FACTOR_PRESETS.A2),
       weightBasis: 'computed',
       grossGamma: 23.0,
-      nibShear: false,
-      etaEng: 0.5,
+      // Nib interlock basis (js/shared-data.js NIB_BASES); nibV / nibEta /
+      // nibGamma are used only when the basis is 'user'.
+      nibBasis: 'clp',
+      nibV: 21.4,
+      nibEta: 0.5,
+      nibGamma: 1.0,
       gammaMuOn: false,
       muBlock: 0.5,
       muConcrete: 0.5,
@@ -164,6 +187,10 @@ export function blankState() {
       baseInclination: 0,
     },
     loads: {
+      // Standard bridge range selection (js/bridge-library.js); 'bespoke' =
+      // user-entered reactions. `sig` fingerprints the applied rows so edits
+      // after applying are reported as "modified from library".
+      library: { range: 'bespoke', row: null, sig: null },
       trafficModels: [{ name: 'LM1', excludeSurchargeWind: false }],
       reactions: [
         newReaction({ name: 'Deck self-weight', group: 'G', Z: 100, psi0: 1, psi1: 1, psi2: 1 }),
@@ -212,6 +239,13 @@ export function blankState() {
 export function migrate(obj) {
   if (!obj || typeof obj !== 'object') throw new Error('Design file is empty');
   const base = blankState();
+  // Files saved before the nib bases existed: keep their friction-only /
+  // BB-judgement choice rather than silently switching to the new default.
+  if (obj.basis && 'nibShear' in obj.basis && !('nibBasis' in obj.basis)) {
+    obj = { ...obj, basis: { ...obj.basis, nibBasis: obj.basis.nibShear ? 'user' : 'none', nibV: 25.4, nibEta: obj.basis.etaEng ?? 0.5, nibGamma: 1 } };
+  }
+  // Only the CLP basis (and friction-only / user) is offered now.
+  if (obj.basis && ['elite', 'ec2'].includes(obj.basis.nibBasis)) obj = { ...obj, basis: { ...obj.basis, nibBasis: 'clp' } };
   const merged = deepMerge(base, obj);
   merged.schemaVersion = SCHEMA_VERSION;
   merged.ends = (obj.ends || base.ends).map((e, i) => deepMerge(newEnd(i + 1), e));
@@ -255,7 +289,7 @@ export const FIELDS = {
     { path: 'project.bearingPlateL', label: 'Bearing plate length (longitudinal)', unit: 'mm', min: 50, step: 5, bridgeOnly: true },
     { path: 'project.bearingPlateB', label: 'Bearing plate width (transverse)', unit: 'mm', min: 50, step: 5, bridgeOnly: true },
     { path: 'project.bearingHeight', label: 'Bearing assembly height', unit: 'mm', min: 0, step: 5, bridgeOnly: true },
-    { path: 'project.fixedEnd', label: 'Fixed end', type: 'select', options: [[1, 'End 1'], [2, 'End 2']], numeric: true, bridgeOnly: true },
+    { path: 'project.fixedEnd', label: 'Fixed end', type: 'select', options: [[1, 'End 1'], [2, 'End 2'], [0, 'Both ends fixed']], numeric: true, bridgeOnly: true },
     { path: 'project.slidingMu', label: 'Free-end sliding bearing μ', min: 0, max: 1, step: 0.01, bridgeOnly: true, help: 'Default 0.20 for steel/steel sliding plates (BB default — verify). PTFE values per BS EN 1337-2 Table 11.' },
     { path: 'project.skew', label: 'Skew angle θ', unit: '°', min: 0, max: 45, step: 0.5, bridgeOnly: true, help: 'Plan drawing and load resolution only.' },
     { path: 'project.status', label: 'Status', type: 'select', options: [['Permanent', 'Permanent works'], ['Temporary', 'Temporary works']] },
@@ -271,8 +305,10 @@ export const FIELDS = {
     { path: 'basis.muBlock', label: 'Block–block friction μk', min: 0.1, max: 1, step: 0.01, help: 'BS EN 1992-1-1 6.2.5(2) "very smooth" = 0.5; matches Elite/CPL.' },
     { path: 'basis.muConcrete', label: 'Block–grout / mass concrete μk', min: 0.1, max: 1, step: 0.01, help: 'BS EN 1992-1-1 6.2.5(2).' },
     { path: 'basis.gammaMuOn', label: 'Apply γμ = 1.25 to block interface friction at ULS', type: 'checkbox', help: 'Optional, conservative.' },
-    { path: 'basis.nibShear', label: 'Include nib shear at ULS (BB judgement)', type: 'checkbox', help: 'VRd,nib = fctd,pl × A_nib / 1.5 (BS EN 1992-1-1 12.6.3) × η_eng. Not manufacturer data.' },
-    { path: 'basis.etaEng', label: 'Nib engagement factor η_eng', min: 0, max: 1, step: 0.05, showIf: (s) => s.basis.nibShear },
+    { path: 'basis.nibBasis', label: 'Nib interlock (shear between courses) — BB basis: CLP calc 302', type: 'select', options: Object.entries(NIB_BASES).map(([k, v]) => [k, v.label]), help: 'Resistance per engaged nib = V × η / γ, counting male nibs of the lower course under a block above; added to friction at SLS (no-slip) and ULS. Ballast wall on grout and seat-on-pad have no nibs.' },
+    { path: 'basis.nibV', label: 'Nib shear V per nib', unit: 'kN', min: 0, step: 0.1, showIf: (s) => s.basis.nibBasis === 'user' },
+    { path: 'basis.nibEta', label: 'Proportion of nibs engaged η', min: 0, max: 1, step: 0.05, showIf: (s) => s.basis.nibBasis === 'user' },
+    { path: 'basis.nibGamma', label: 'Factor γ on nib shear', min: 1, step: 0.05, showIf: (s) => s.basis.nibBasis === 'user' },
     { path: 'basis.epMethod', label: 'Active pressure method', type: 'select', options: [['Rankine', 'Rankine Ka, δ = 0 (default)'], ['Coulomb', 'Coulomb Ka with δ and β'], ['K0', 'At rest K0 = 1 − sin φ′']] },
     { path: 'basis.coulombDeltaRatio', label: 'Coulomb δ/φ′', min: 0, max: 0.667, step: 0.01, showIf: (s) => s.basis.epMethod === 'Coulomb', help: 'δ ≤ (2/3)φ′ (BS EN 1997-1 9.5.1(6)).' },
     { path: 'basis.backfillSlope', label: 'Backfill slope β', unit: '°', min: 0, max: 30, step: 0.5, showIf: (s) => s.basis.epMethod === 'Coulomb' },

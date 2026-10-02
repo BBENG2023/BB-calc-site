@@ -8,6 +8,8 @@ import { FACTOR_PRESETS, LEGATO_BLOCKS } from '../../js/shared-data.js';
 import { drawingD1, diagramD2, drawingD3, drawingD4, drawingD5, drawingD6 } from './drawings.js';
 import { defaultClauses, defaultDRA } from './spec.js';
 import { REACTION_GROUPS } from './schema.js';
+import { nibDesign } from './checks-internal.js';
+import { BRIDGE_RANGES } from '../../js/bridge-library.js';
 
 const e = escapeHtml;
 const fx = (n, d = 3) => (Number.isFinite(n) ? Number(n).toFixed(d) : '—');
@@ -42,7 +44,7 @@ export function buildReport(state, output, headerDetails = {}, calc) {
   // 1 Brief and scope.
   add(1, 'Brief and scope', `
     <p><strong>${e(state.meta.presetName || '')}</strong>${state.meta.notes ? ` — ${e(state.meta.notes)}` : ''}</p>
-    <p>${bridge ? `Design of dry-laid Legato interlocking block bank seats for a single-span bridge (${e(P.bridgeDescription || '')}): span ${fx(P.span, 3)} m bearing to bearing, deck ${fx(P.deckWidth, 2)} m wide, ${P.bearingsPerEnd} bearings per end, fixed end ${P.fixedEnd}, skew ${P.skew}°.` : 'Retaining-wall mode (Elite guide method): single section per metre run, no bridge or crossing checks.'}</p>
+    <p>${bridge ? `Design of dry-laid Legato interlocking block bank seats for a single-span bridge (${e(P.bridgeDescription || '')}): span ${fx(P.span, 3)} m bearing to bearing, deck ${fx(P.deckWidth, 2)} m wide, ${P.bearingsPerEnd} bearings per end, ${Number(P.fixedEnd) === 0 ? `both ends fixed` : `fixed end ${P.fixedEnd}`}, skew ${P.skew}°.` : 'Retaining-wall mode (Elite guide method): single section per metre run, no bridge or crossing checks.'}</p>
     <p>Status: ${e(P.status)} works; design life ${P.designLife} years (Legato blocks rated &gt; 100 years by Elite). Mode: ${endsL.map((x) => `${e(x.label)} ${state.ends[x.endIdx].arrangement.mode === 'auto' ? 'auto-sized' : 'checked'}`).join(', ')}.</p>
     <p>Scope: ground model from SPT boreholes; bridge reactions, approach earth pressures and hydraulic actions; block arrangement and coursing to levels; external, internal and local stability; overall stability; settlement; crossing checks; construction stages; drawings, schedules, specification, designer’s risk assessment and PLT requirement.</p>
     <p class="lg-note">Out of scope: BS EN 1992-4 anchor resistance; non-circular slips and undrained drawdown; scour depth calculation; Vee/Duo blocks; DXF; 3D skew/wing interaction; multi-span piers; EN 1997:2024.</p>`);
@@ -58,14 +60,22 @@ export function buildReport(state, output, headerDetails = {}, calc) {
     <p>Factor preset: <strong>${e(base.label)}</strong>. Source: ${e(base.source)} <em>(verify)</em>.${edits.length ? ` Edited values: ${e(edits.join('; '))}.` : ' No edits to the preset.'}</p>
     ${tableHTML(['Set', 'γG,sup', 'γG,inf', 'γQ traffic', 'γQ other', 'Materials'], ['EQU', 'C1', 'C2'].map((c) => [c === 'C1' ? 'DA1-C1 (A1+M1+R1)' : c === 'C2' ? 'DA1-C2 (A2+M2+R1)' : 'EQU', F[c].gGsup, F[c].gGinf, F[c].gQt, F[c].gQo, F[c].M]))}
     <p>M2: γφ′ ${F.M2.gPhi} (on tan φ′), γc′ ${F.M2.gC}, γcu ${F.M2.gCu}; R1: γR = ${F.R1.gRv}. SLS characteristic and quasi-permanent: γ = 1.0 with ψ applied. Water actions γ = ${F.gWater}.</p>
-    <p>Materials: Legato blocks C40/50 plain concrete (fcu 50 N/mm²), fcd,pl = 16.0 N/mm², fctd,pl = 1.0 N/mm² (BS EN 1992-1-1 §12, αcc,pl = αct,pl = 0.6, UK NA — verify). Self-weight basis: ${e(state.basis.weightBasis)}. Block–block friction μk = ${state.basis.muBlock}${state.basis.nibShear ? `; nib shear included at ULS (η_eng = ${state.basis.etaEng}) — BB judgement, not manufacturer data` : '; nib shear not relied on'}.</p>
+    <p>Materials: Legato blocks C40/50 plain concrete (fcu 50 N/mm²), fcd,pl = 16.0 N/mm², fctd,pl = 1.0 N/mm² (BS EN 1992-1-1 §12, αcc,pl = αct,pl = 0.6, UK NA — verify). Self-weight basis: ${e(state.basis.weightBasis)}. Block–block friction μk = ${state.basis.muBlock}. Nib interlock: ${(() => { const nd = nibDesign(state.basis); return nd.on ? `<strong>relied on</strong> — ${e(nd.label)}: ${fx(nd.V, 1)} kN × η ${nd.eta} / γ ${nd.gamma} = ${fx(nd.perNib, 1)} kN per counted nib, added to friction at SLS and ULS. Source: ${e(nd.source)}` : 'not relied on (friction only)'; })()}.</p>
     <p>Earth pressure: ${e(state.basis.epMethod)}. Design check category (header): ${e(headerDetails.checkedCategory || 'to be confirmed')}.</p>`);
 
   // 3 Bridge data and loads.
   if (bridge) {
     const rows = (state.loads.reactions || []).map((r) => [e(r.name), e(REACTION_GROUPS.find((g) => g.value === r.group)?.label || r.group), e(r.model || ''), r.basis === 'perBearing' ? 'per bearing' : 'total', Number(r.X) || 0, Number(r.Y) || 0, Number(r.Z) || 0, r.reversible ? '±' : '', r.xFixedOnly ? 'fixed end' : 'both', `${r.psi0}/${r.psi1}/${r.psi2}`, e(r.end)]);
     const sits = endsL[0].situations.map((s) => [e(s.id), e(s.label), s.kind]);
+    const lib = state.loads.library;
+    const range = lib && lib.range !== 'bespoke' ? BRIDGE_RANGES[lib.range] : null;
+    const libRow = range ? range.rows.find((x) => x.key === lib.row) : null;
+    const modified = libRow && lib.sig && lib.sig !== JSON.stringify([state.loads.trafficModels, state.loads.reactions]);
+    const libHTML = libRow
+      ? `<p><strong>Loads from the Beaver Bridges standard range: ${e(libRow.label)}</strong> (${e(range.label)}); loading required: <strong>${e((range.loadings.find((x) => x.key === lib.loading) || range.loadings.find((x) => x.key === range.defaultLoading)).label)}</strong>. Source: ${e(range.source)} — transcription to be verified against the current revision.${modified ? ' <strong>⚠ The standard loads were edited after selection — the values below are not the published standard values.</strong>' : ''}</p><ul class="rs-bullets">${range.notes.map((n) => `<li>${e(n)}</li>`).join('')}</ul>`
+      : '<p><strong>Bespoke loads</strong> entered by the designer from the bridge supplier’s reaction schedule.</p>';
     add(3, 'Bridge data and loads', `
+      ${libHTML}
       <p>Bearing plate ${P.bearingPlateL} × ${P.bearingPlateB} mm, assembly height ${P.bearingHeight} mm; free-end sliding μ = ${P.slidingMu} (free-end X = ±μ(G + concurrent vertical traffic)). Horizontal loads applied at seat level + grout + bearing height.</p>
       ${tableHTML(['Case', 'Group', 'Model', 'Basis', 'X kN', 'Y kN', 'Z kN', '±', 'X resisted', 'ψ0/ψ1/ψ2', 'End'], rows)}
       <p>Traffic models: ${state.loads.trafficModels.map((m) => `${e(m.name)}${m.excludeSurchargeWind ? ' (approach surcharge and wind excluded when this model acts)' : ''}`).join('; ')}. Models are non-coexistent — each forms its own combinations. Where per-corner maxima are summed for an abutment total, this is conservative for bearing and irrelevant for sliding/overturning (vertical traffic favourable, set to zero).</p>
@@ -160,7 +170,7 @@ export function buildReport(state, output, headerDetails = {}, calc) {
     const sub = x.I4.map((s) => [e(s.id), e(s.title), e(s.what), ut(s.util), e(s.label)]);
     add(8, `Internal stability — ${x.label}`, `
       ${tableHTML(['Interface', 'z m', 'b m', 'I1 ULS', 'I1 SLS no-slip', 'I1 legacy FoS', 'I2 EQU', 'I2 legacy FoS', 'I3 kern (q-p)', 'e/(b/6) char.', 'I3 ULS', 'Nibs'], rows, 'lg-small')}
-      <p class="lg-note">I1: μk = ${state.basis.muBlock} friction${state.basis.gammaMuOn ? ' / 1.25' : ''}${state.basis.nibShear ? ` + η_eng·n·VRd,nib (VRd,nib ≈ 25.4 kN; BB judgement)` : ' only'}; SLS: friction alone resists the characteristic force. I2 about the front (or rear) edge of contact. I3: resultant within the contact width (q-p kern; characteristic e/(b/6) for information) and peak stress on the net area (gross − recesses) ≤ fcd,pl = 16 N/mm².</p>
+      <p class="lg-note">I1: μk = ${state.basis.muBlock} friction${state.basis.gammaMuOn ? ' / 1.25' : ''}${nibDesign(state.basis).on ? ` + nib interlock (${fx(nibDesign(state.basis).perNib, 1)} kN per counted male nib under a block above)` : ' only'}; SLS: friction${nibDesign(state.basis).on ? ' plus nib interlock' : ' alone'} resists the characteristic force (no slip). I2 about the front (or rear) edge of contact. I3: resultant within the contact width (q-p kern; characteristic e/(b/6) for information) and peak stress on the net area (gross − recesses) ≤ fcd,pl = 16 N/mm².</p>
       <div id="rep-e${n}-I1"></div><div id="rep-e${n}-I2"></div><div id="rep-e${n}-I3"></div>
       ${stepsHTML(x.intSteps)}
       ${h5('I4 Sub-stacks', `rep-e${n}-I4`)}${sub.length ? tableHTML(['Id', 'Sub-stack', 'Mode', 'Util', 'Governing'], sub) : '<p>None applicable.</p>'}`);

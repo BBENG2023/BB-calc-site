@@ -6,6 +6,7 @@
 import { makeView, svgDoc, line, polyline, polygon, rect, circle, path, text, arrow, dimH, dimV, levelTag, legend, scaleBar, titleStrip, HATCH } from '../../js/svg-kit.js';
 import { LEGATO_BLOCKS } from '../../js/shared-data.js';
 import { earthCoefficient, factorItems, freeBody } from './actions.js';
+import { expandSimpleBorehole } from './ground.js';
 
 const INK = '#1A1E28', NAVY = '#1C2B55', ORANGE = '#E27A00', BLUE = '#2f6fa3', GREY = '#8a8f9c';
 
@@ -306,7 +307,7 @@ export function drawingD1(state, design, { slopeCase } = {}) {
   }
 
   // Boreholes.
-  (state.boreholes || []).forEach((bh) => {
+  (state.boreholes || []).map(expandSimpleBorehole).forEach((bh) => {
     const xb = X(bh.chainage);
     const w = 9;
     (bh.strata || []).forEach((s) => {

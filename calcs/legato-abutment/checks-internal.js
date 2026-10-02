@@ -4,11 +4,16 @@
 
 import { freeBody, factorItems, sums, resultantU, qpSituation } from './actions.js';
 import { eachCombo, comboLabel, phiFillFor, toppleAt, signs, f1, f2, f3 } from './checks-external.js';
-import { LEGATO_CONCRETE, LEGATO_INTERLOCK, LEGATO_GAMMA } from '../../js/shared-data.js';
+import { LEGATO_CONCRETE, LEGATO_INTERLOCK, LEGATO_GAMMA, NIB_BASES } from '../../js/shared-data.js';
 import { designPhi, rad, KaRankine } from '../../js/geo-core.js';
 
 const NIB_AREA_MM2 = 195 * 195;
-export const VRD_NIB = (LEGATO_CONCRETE.fctdPl * NIB_AREA_MM2) / 1.5 / 1000; // kN, BS EN 1992-1-1 12.6.3
+// Design shear per counted nib from the selected basis: V × η / γ.
+export function nibDesign(basis) {
+  const key = basis.nibBasis || 'none';
+  const b = key === 'user' ? { ...NIB_BASES.user, V: Number(basis.nibV) || 0, eta: Number(basis.nibEta) || 0, gamma: Number(basis.nibGamma) || 1 } : (NIB_BASES[key] || NIB_BASES.none);
+  return { key, ...b, perNib: (b.V * b.eta) / (b.gamma || 1), on: key !== 'none' && b.V > 0 && b.eta > 0 };
+}
 const NET_FRACTION = 1 - (1 / 0.16) * (LEGATO_INTERLOCK.recess.base / 1000) ** 2; // one recess per 400×400 grid cell
 
 function contactOf(geom, k) {
@@ -17,13 +22,14 @@ function contactOf(geom, k) {
 }
 
 // Male nibs of course k engaged under blocks of course k+1.
-export function engagedNibs(geom, k) {
+export function engagedNibs(geom, k, part = null) {
   const lo = geom.courses[k - 1], up = geom.courses[k];
-  if (!lo.pieces?.length || !up.pieces?.length) return 0;
+  if (!lo || !up || !lo.pieces?.length || !up.pieces?.length) return 0;
   let n = 0;
   lo.pieces.forEach((p) => {
     if (!p.male) return;
     for (let u = p.u0 + 0.2; u < p.u1 - 1e-6; u += 0.4) {
+      if (part && (u < part[0] || u > part[1])) continue;
       for (let v = p.v0 + 0.2; v < p.v1 - 1e-6; v += 0.4) {
         if (up.pieces.some((q) => u > q.u0 && u < q.u1 && v > q.v0 && v < q.v1)) n++;
       }
@@ -32,7 +38,7 @@ export function engagedNibs(geom, k) {
   return n;
 }
 
-function slideInterface(ctx, items, dir, cat, k) {
+function slideInterface(ctx, items, dir, cat, k, part = null) {
   const { V } = sums(items);
   const Hu = items.reduce((s, i) => s + i.Fu, 0) * dir;
   const Hv = items.reduce((s, i) => s + i.Fv, 0);
@@ -42,9 +48,10 @@ function slideInterface(ctx, items, dir, cat, k) {
   const gmu = uls && ctx.state.basis.gammaMuOn ? 1.25 : 1;
   const Rf = (Math.max(0, V) * mu) / gmu;
   let Rn = 0, nNib = 0;
-  if (uls && ctx.state.basis.nibShear && k !== null) {
-    nNib = engagedNibs(ctx.geom, k);
-    Rn = (ctx.state.basis.etaEng ?? 0.5) * nNib * VRD_NIB;
+  const nd = nibDesign(ctx.state.basis);
+  if (nd.on && k) {
+    nNib = engagedNibs(ctx.geom, k, part);
+    Rn = nNib * nd.perNib;
   }
   return { V, H, Hu, Hv, Rf, Rn, nNib, Rd: Rf + Rn, util: H > 1e-9 ? H / (Rf + Rn) : 0, mu, gmu };
 }
@@ -134,7 +141,8 @@ export function interfaceSteps(ctx, rows) {
   const gov = rows.reduce((m, r) => ((r.slide?.util ?? 0) > (m?.slide?.util ?? -1) ? r : m), null);
   if (gov && gov.slide) {
     const s = gov.slide;
-    steps.push({ title: `I1 governing interface ${gov.label} (z = ${f2(gov.z)} m) — ${s.label}`, formula: 'Hd ≤ μ·Vd,fav / γμ (+ η_eng·n_nib·VRd,nib if enabled)', substitution: `Vd,fav = ${f1(s.V)} kN, μ = ${s.mu}${s.gmu > 1 ? ' / 1.25' : ''}${s.Rn ? `, nibs n = ${s.nNib}, ${f1(s.Rn)} kN` : ''}; Hd = ${f1(s.H)} kN`, result: `Rd = ${f1(s.Rd)} kN; utilisation ${f3(s.util)}` });
+    const nd = nibDesign(ctx.state.basis);
+    steps.push({ title: `I1 governing interface ${gov.label} (z = ${f2(gov.z)} m) — ${s.label}`, formula: `Hd ≤ μ·Vd,fav / γμ${nd.on ? ' + n_nib × V × η / γ (nib interlock)' : ' (friction only)'}`, substitution: `Vd,fav = ${f1(s.V)} kN, μ = ${s.mu}${s.gmu > 1 ? ' / 1.25' : ''}${nd.on ? `; nibs n = ${s.nNib} × ${f1(nd.V)} × ${nd.eta} / ${nd.gamma} = ${f1(s.Rn)} kN` : ''}; Hd = ${f1(s.H)} kN`, result: `Rd = ${f1(s.Rd)} kN; utilisation ${f3(s.util)}` });
   }
   const govT = rows.reduce((m, r) => ((r.topple?.util ?? 0) > (m?.topple?.util ?? -1) ? r : m), null);
   if (govT && govT.topple) {
@@ -212,8 +220,8 @@ export function checkSubStacks(ctx, layoutPlanes) {
       const phiFill = phiFillFor(ctx, cat);
       const front = factorItems(freeBody(geom, cut, { sit, phiFill, part: [-1e6, pl.u] }).items, { F: ctx.F, cat, sit, check: 'slide', dir: -1, sign });
       const rear = factorItems(freeBody(geom, cut, { sit, phiFill, part: [pl.u, 1e6] }).items, { F: ctx.F, cat, sit, check: 'slide', dir: -1, sign });
-      const rf = slideInterface(ctx, front, -1, cat, k || null);
-      const rr = slideInterface(ctx, rear, -1, cat, k || null);
+      const rf = slideInterface(ctx, front, -1, cat, k || null, [-1e6, pl.u]);
+      const rr = slideInterface(ctx, rear, -1, cat, k || null, [pl.u, 1e6]);
       const excess = Math.max(0, rr.H - rr.Rd);
       const util = (rf.H + excess) / Math.max(rf.Rd, 1e-9) * (cat === 'LEG' ? ctx.F.legacy.sliding : 1);
       if (!worst || util > worst.util) worst = { util, what: 'sliding', label: comboLabel(sit, cat, sign, -1), H: rf.H + excess, R: rf.Rd };

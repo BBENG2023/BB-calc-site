@@ -446,6 +446,16 @@ a.pipe-link:hover {
 .tbl-input input[type="text"] { min-width: 6rem; }
 .tbl-input input:focus, .tbl-input select:focus { outline: 2px solid var(--bb-primary); outline-offset: 0; }
 .tbl-actions { white-space: nowrap; }
+.tbl-input input.tbl-bad { border-color: var(--bb-err); background: #FBEAE7; }
+.lg-more { border: 1px solid var(--bb-line); border-radius: var(--bb-radius); background: #fff; padding: 0.5rem 0.75rem; margin-bottom: 1rem; }
+.lg-more > summary { cursor: pointer; font-weight: 700; font-size: 0.88rem; color: var(--bb-primary); }
+.lg-more[open] > summary { margin-bottom: 0.6rem; }
+.lg-library { border-color: var(--bb-primary); border-width: 2px; }
+.lg-library .lg-notes { font-size: 0.78rem; color: var(--bb-muted); margin: 0.5rem 0 0; }
+.lg-mod { font-size: 0.82rem; font-weight: 700; color: #8a5a00; background: var(--bb-warn-bg); border-left: 3px solid var(--bb-warn-ln); padding: 0.4em 0.7em; }
+.lg-lead { font-size: 0.88rem; color: var(--bb-ink); }
+.lg-bhcard .lg-plain { border: none; padding: 0; margin: 0 0 0.5rem; }
+.lg-bhcard .lg-plain > legend { display: none; }
 .tbl-rowlabel { font-weight: 700; color: var(--bb-primary); }
 .tbl-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
 .tbl-paste textarea { width: 100%; font-family: ui-monospace, monospace; font-size: 0.8rem; margin-top: 0.3rem; }

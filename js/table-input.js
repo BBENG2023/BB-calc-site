@@ -71,7 +71,15 @@ export function createTable({ columns, rows, onChange, newRow, caption, compact 
       if (col.type === 'number') { input.step = col.step ?? 'any'; if (col.min !== undefined) input.min = col.min; }
       const v = row[col.key];
       input.value = v === null || v === undefined ? '' : String(v);
-      input.addEventListener('input', () => { row[col.key] = coerce(col, input.value); changed(false); });
+      // Optional per-column check: validate(value) → message ('' = OK).
+      const check = () => {
+        if (!col.validate) return;
+        const msg = col.validate(input.value);
+        input.classList.toggle('tbl-bad', !!msg);
+        input.title = msg || '';
+      };
+      check();
+      input.addEventListener('input', () => { row[col.key] = coerce(col, input.value); check(); changed(false); });
     }
     input.setAttribute('aria-label', `${col.label} row ${ri + 1}`);
     input.dataset.row = ri;

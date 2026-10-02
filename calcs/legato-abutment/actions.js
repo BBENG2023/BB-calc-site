@@ -24,7 +24,8 @@ export function rotateToAbutment(FX, FY, skewDeg, endNo) {
 export function resolveBridgeLoads(state, endNo, geom) {
   const P = state.project;
   const items = [];
-  const fixed = Number(P.fixedEnd) === endNo;
+  // fixedEnd 0 = both abutments fixed (e.g. SSVB / BCB): no sliding end.
+  const fixed = Number(P.fixedEnd) === 0 || Number(P.fixedEnd) === endNo;
   const nb = Math.max(1, Number(P.bearingsPerEnd) || 1);
   const rows = (state.loads.reactions || []).filter((r) => r.end === 'Both' || r.end === `End ${endNo}` || r.end === endNo);
   const bearing = geom.bearing;

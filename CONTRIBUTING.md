@@ -357,6 +357,16 @@ water. Materials are always distinguished by hatch and label, never by
 colour alone. `svgDoc` gives each drawing its own pattern ids, so a hidden
 SVG never blanks the hatching of another.
 
+### `js/bridge-library.js` — standard bridge loads
+
+Characteristic abutment loads for the Beaver Bridges ranges (SSVB, BCB,
+Waagner-Biro panel bridge), each with its `source` document, `notes`,
+`verify: true`, the tabulated `rows` and a `toDesign(row)` that returns
+the bridge geometry patch, vehicle models and per-abutment reaction rows.
+Any calc that needs bridge reactions should take them from here. When a
+range's source document is revised, update the rows here (and the unit
+sample in `calcs/legato-abutment/index.js`) — one place, every calc.
+
 ### The `plt` pipe
 
 The Legato calc's `output.design.ends[i].plt` is the plate load test
