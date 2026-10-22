@@ -98,6 +98,46 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.6.0** — Legato abutment designer **v1.4.0**: fixes from a live check,
+  and a local load path through the blocks.
+  - **Loads:**
+    - Schedule units (kN, tonnes, per truss) with a kN column, and "Check
+      units" plausibility warnings.
+    - A load model standard is required for each traffic model.
+    - Bearings per end with position and fixity (fixed, guided, free).
+    - Thermal restraint force required when both ends are fixed.
+    - Vertical wind (up and down).
+    - Accidental situation for group A rows.
+  - **Combinations:**
+    - Traffic rows with a missing model are assigned, not dropped. This was
+      the cause of traffic missing from Vd and the empty "Traffic models:" line.
+    - New braking-leading situation.
+    - L1 checked per bearing.
+    - D2 label shows G + Q.
+  - **Load path:**
+    - Bond-based dispersion by default (also none / angle / full length with
+      an RC capping beam).
+    - E1–E4 and settlement checked per loaded and unloaded zone.
+    - New drawing D3b.
+  - **Guards:**
+    - Overrides need a justification; tan δk ≤ 0 is rejected.
+    - Settlement criteria panel with tilt (E6t) and transverse differential
+      (E6x) checks.
+    - E4 uses one B.
+    - A "NOT VALID" watermark, with Print disabled, for stale, missing or
+      inconsistent inputs. X3 reports INCOMPLETE without a DFL.
+    - "PROJECT DETAILS MISSING" in the header when project fields are blank.
+  - **Quick design:**
+    - Seven steps: Project · Bridge & bearings · Loads · Ground ·
+      Arrangement · Limits & overrides · Results.
+    - Paired sliders with default markers; ⓘ clause tooltips.
+    - Reset per field and per step.
+    - Change deltas on every utilisation; a sticky PASS/FAIL strip naming
+      the governing check and zone.
+    - Live D2 and D3b drawings.
+  - **Shared code:** `js/main.js` gains a backwards-compatible `output.blocked`
+    hook; `buildSheetHeader` gains an optional missing-details flag.
+
 - **v1.5.1** — Legato abutment designer (calc v1.3.0) simplified for users.
   New **Quick design** view (default) with five guided steps — Bridge &
   loads, Levels, Ground, Size, Results — showing only the usual inputs.
