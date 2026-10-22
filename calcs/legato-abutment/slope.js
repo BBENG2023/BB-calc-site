@@ -7,6 +7,7 @@
 //           pondLevel(x) → y|−∞, strips: [{x0,x1,q}], points: [{x,y,Fx,Fy}], bottom, xRange }
 // material = { id, gamma, gammaSat, c, phi, cu, undrained }
 
+import { deckCharacteristic } from './actions.js';
 import { GAMMA_W, rad } from '../../js/geo-core.js';
 
 export function surfaceY(surface, x) {
@@ -272,12 +273,9 @@ export function buildEndSlopeModel(state, geom, sitName) {
   }
   if (sitName !== 'construction') {
     const bx = ch(geom.bearing.u);
-    let G = 0, Q = 0, Hx = 0;
-    geom.bridgeItems.forEach((it) => {
-      if (it.group === 'G' || it.group === 'G2') G += it.Fz;
-      if (it.group === 'Qv' && it.model === (state.loads.trafficModels[0]?.name || '')) Q += it.Fz;
-      if (it.group === 'Qb' && it.model === (state.loads.trafficModels[0]?.name || '')) Hx += Math.abs(it.Fu);
-    });
+    // Largest vertical traffic model with the largest braking (conservative).
+    const dc = deckCharacteristic(geom);
+    const G = dc.G, Q = dc.Q, Hx = dc.H;
     const Lm = geom.L;
     points.push({ x: bx, y: z2l(geom.bearing.zH), Fx: 0, Fy: G / Lm, variable: false, label: 'Bridge G (per m)' });
     if (Q) points.push({ x: bx, y: z2l(geom.bearing.zH), Fx: 0, Fy: Q / Lm, variable: true, label: 'Traffic (per m)' });

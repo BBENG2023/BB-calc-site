@@ -79,7 +79,9 @@ export function crossingChecks(state, endRes) {
     const fb = soffit - X.DFL;
     r.soffit = soffit; r.freeboard = fb;
     const conv = padFrontCh * sL < crest.ch * sL + 1e-9 && g.formationLevel < X.DFL;
-    r.items.push({ id: 'X3', title: 'Flood and freeboard', status: fb + 1e-9 >= P.freeboardRequired ? 'ok' : 'fail', util: P.freeboardRequired > 0 ? P.freeboardRequired / Math.max(fb, 1e-6) : 0, text: `Freeboard = soffit ${f3(soffit)} − DFL ${f3(X.DFL)} = ${f3(fb)} m vs ${f2(P.freeboardRequired)} m required${X.DFLlabel ? ` (${X.DFLlabel})` : ''}.${g.formationLevel < X.DFL ? ' Flood and buoyancy cases activated.' : ''}${conv ? ' Abutment/pad encroaches below DFL within the channel — conveyance/obstruction to be agreed with the regulator.' : ''}` });
+    if (!(Number(X.DFL) > 0)) {
+      r.items.push({ id: 'X3', title: 'Flood and freeboard', status: 'incomplete', util: null, text: 'INCOMPLETE — design flood level (DFL) not set. Enter the DFL with its source.' });
+    } else r.items.push({ id: 'X3', title: 'Flood and freeboard', status: fb + 1e-9 >= P.freeboardRequired ? 'ok' : 'fail', util: P.freeboardRequired > 0 ? P.freeboardRequired / Math.max(fb, 1e-6) : 0, text: `Freeboard = soffit ${f3(soffit)} − DFL ${f3(X.DFL)} = ${f3(fb)} m vs ${f2(P.freeboardRequired)} m required${X.DFLlabel ? ` (${X.DFLlabel})` : ''}.${g.formationLevel < X.DFL ? ' Flood and buoyancy cases activated.' : ''}${conv ? ' Abutment/pad encroaches below DFL within the channel — conveyance/obstruction to be agreed with the regulator.' : ''}` });
 
     // X4 regulatory proximity.
     const buf = Number(X.regulatoryBuffer) || 0;

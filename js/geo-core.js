@@ -221,3 +221,109 @@ export function characteristicValue(values, method = 'auto', manual = null) {
   } else { m = m === 'manual' ? 'minimum' : m; adopted = min; }
   return { n, mean, sd, min, adopted, method: m };
 }
+
+// --- Burland & Burbidge (1985) settlement on sand -------------------------------
+
+// q = gross bearing pressure (kPa), sigmaV0 = maximum previous effective
+// overburden at founding level (kPa). Returns settlements in mm.
+export function burlandBurbidge({ B, L, Nbar, q, sigmaV0 = 0, tYears = 3, Hs = null, R3 = 0.3, Rt = 0.2 }) {
+  const Ic = 1.71 / Math.pow(Math.max(Nbar, 1e-6), 1.4);
+  const zI = Math.pow(B, 0.763);
+  const r = L / B;
+  const fs = Math.pow((1.25 * r) / (r + 0.25), 2);
+  const fl = Hs !== null && Hs < zI ? (Hs / zI) * (2 - Hs / zI) : 1;
+  const ft = tYears > 3 ? 1 + R3 + Rt * Math.log10(tYears / 3) : 1;
+  const qTerm = q > sigmaV0 ? q - (2 / 3) * sigmaV0 : q / 3;
+  const si = fs * fl * qTerm * Math.pow(B, 0.7) * Ic;
+  return { Ic, zI, fs, fl, ft, qTerm, si, st: si * ft };
+}
+
+// SPT corrections for B&B: fine/silty sand below water, gravel.
+export function bbCorrectN(N, granType, belowWater) {
+  let n = N;
+  if (granType === 'Fine/silty sand' && belowWater && n > 15) n = 15 + 0.5 * (n - 15);
+  if (granType === 'Gravel') n *= 1.25;
+  return n;
+}
+
+// --- Stress distribution ----------------------------------------------------------
+
+// Boussinesq influence factor under the corner of a uniformly loaded
+// rectangle B × L at depth z (Fadum / Newmark). Δσz = q·I.
+export function boussinesqCornerI(B, L, z) {
+  if (z <= 0) return 0.25;
+  const m = B / z, n = L / z;
+  const m2 = m * m, n2 = n * n, s = m2 + n2 + 1;
+  const root = Math.sqrt(s);
+  const a = ((2 * m * n * root) / (s + m2 * n2)) * ((s + 1) / s);
+  let b = Math.atan((2 * m * n * root) / (s - m2 * n2));
+  if (s - m2 * n2 < 0) b += Math.PI;
+  return (a + b) / (4 * Math.PI);
+}
+
+// Δσz under any point (x, y) for a rectangle centred on the origin, by
+// corner superposition. x along B, y along L.
+export function boussinesqRect(q, B, L, z, x = 0, y = 0) {
+  const xs = [B / 2 - x, B / 2 + x];
+  const ys = [L / 2 - y, L / 2 + y];
+  let I = 0;
+  for (const a of xs) for (const b of ys) I += Math.sign(a) * Math.sign(b) * boussinesqCornerI(Math.abs(a), Math.abs(b), z);
+  return q * I;
+}
+
+// 2:1 (2V:1H) spread — mean Δσz under a B × L load at depth z.
+export const spread21 = (q, B, L, z) => (q * B * L) / ((B + z) * (L + z));
+
+// --- Terzaghi 1D consolidation ------------------------------------------------------
+
+// Fourier solution for any initial excess pore pressure profile u0(Z),
+// Z = z/H from the top of the layer. drainage: 'double' | 'top' (base
+// impermeable). Tv is based on the drainage path: H/2 (double) or H (top).
+export function terzaghiSolver(u0, drainage = 'double', terms = 200) {
+  const single = drainage !== 'double';
+  const nInt = 800;
+  const lam = []; // eigenvalue × H (argument multiplier on Z)
+  const coef = [];
+  const simpson = (f) => {
+    let s = f(0) + f(1);
+    for (let i = 1; i < nInt; i++) s += (i % 2 ? 4 : 2) * f(i / nInt);
+    return s / (3 * nInt);
+  };
+  for (let k = 0; k < terms; k++) {
+    const a = single ? ((2 * k + 1) * Math.PI) / 2 : (k + 1) * Math.PI;
+    const c = 2 * simpson((Z) => u0(Z) * Math.sin(a * Z));
+    lam.push(a);
+    coef.push(c);
+  }
+  const u0avg = simpson(u0);
+  // exponent factor so that e^(−f·Tv) uses Tv on the drainage path
+  const expf = lam.map((a) => (single ? a * a : (a * a) / 4));
+  const u = (Z, Tv) => {
+    let s = 0;
+    for (let k = 0; k < terms; k++) {
+      const e = expf[k] * Tv;
+      if (e > 60) break;
+      s += coef[k] * Math.sin(lam[k] * Z) * Math.exp(-e);
+    }
+    return s;
+  };
+  const U = (Tv) => {
+    if (Tv <= 0) return 0;
+    let s = 0; // ∫ u dZ term by term: ∫ sin(aZ) = (1 − cos a)/a
+    for (let k = 0; k < terms; k++) {
+      const e = expf[k] * Tv;
+      if (e > 60) break;
+      s += coef[k] * ((1 - Math.cos(lam[k])) / lam[k]) * Math.exp(-e);
+    }
+    return 1 - s / u0avg;
+  };
+  const TvFor = (target) => {
+    let lo = 1e-8, hi = 20;
+    for (let i = 0; i < 100; i++) {
+      const mid = Math.sqrt(lo * hi);
+      if (U(mid) < target) lo = mid; else hi = mid;
+    }
+    return Math.sqrt(lo * hi);
+  };
+  return { u, U, TvFor, u0avg };
+}

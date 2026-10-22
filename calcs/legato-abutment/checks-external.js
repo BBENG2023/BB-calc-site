@@ -219,6 +219,7 @@ export function slidingAt(ctx, items, cut, cat, dir) {
   const Rp = dir < 0 ? passive.reduce((s, i) => s + i.Fu, 0) : 0;
   const fr = interfaceFriction(ctx, cut, cat);
   let Rd = Math.max(0, V) * fr.tanD;
+  const RdDrained = Rd;
   let mode = 'drained';
   let RdU = null;
   if (fr.cud !== undefined) {
@@ -230,7 +231,7 @@ export function slidingAt(ctx, items, cut, cat, dir) {
     if (RdU < Rd) { Rd = RdU; mode = 'undrained (≤ 0.4Vd, EC7 6.5.3(12)P)'; }
   }
   const util = H > 1e-9 ? H / (Rd + Rp) : 0;
-  return { V, H, HuNet, Hv, Rp, Rd, RdTotal: Rd + Rp, util, tanD: fr.tanD, desc: fr.desc, mode, RdU };
+  return { V, H, HuNet, Hv, Rp, Rd, RdTotal: Rd + Rp, util, tanD: fr.tanD, desc: fr.desc, mode, RdU, RdDrained };
 }
 
 export function checkSliding(ctx) {
@@ -268,7 +269,7 @@ export function checkSliding(ctx) {
   const g = ctx.F.legacyOnly ? legacy : gov;
   if (g) {
     steps.push({ title: `Governing: ${g.label}`, formula: 'Hd = √(Σ Fu,drive² + Σ Fv²);  V favourable only (variable vertical traffic = 0)', substitution: `Vd,fav = ${f1(g.V)} kN; Hu = ${f1(g.HuNet)} kN, Hv = ${f1(g.Hv)} kN`, result: `Hd = ${f1(g.H)} kN` });
-    steps.push({ title: 'Interface resistance (EC7 6.5.3)', formula: g.mode.startsWith('undrained') ? 'Rd = min(A′·cu,d, 0.4·Vd)' : 'Rd = Vd,fav · tan δd (+ Rp,d if passive relied on)', substitution: `${g.desc}; tan δd = ${f3(g.tanD)}${g.Rp ? `; Rp = ${f1(g.Rp)} kN` : ''}`, result: `Rd = ${f1(g.RdTotal)} kN` });
+    steps.push({ title: 'Interface resistance (EC7 6.5.3)', formula: 'Drained: Rd = Vd,fav · tan δd (6.5.3(8));  undrained: Rd = min(A′·cu,d, 0.4·Vd) (6.5.3(11), (12)P). Both conditions must be satisfied, so the lower governs (+ Rp,d if passive relied on).', substitution: `${g.desc}; tan δd = ${f3(g.tanD)} → drained Rd = ${f1(g.RdDrained)} kN${g.RdU !== null && g.RdU !== undefined ? `; undrained Rd = ${f1(g.RdU)} kN` : '; undrained n/a (granular or no cu)'}${g.Rp ? `; Rp = ${f1(g.Rp)} kN` : ''}`, result: `Rd = ${f1(g.RdTotal)} kN (${g.mode} governs)` });
     if (ctx.F.legacyOnly) steps.push({ title: 'Legacy FoS', formula: 'FoS = Rd / H ≥ 1.5', substitution: `${f1(g.RdTotal)} / ${f1(g.H)}`, result: `FoS = ${f3(g.fos)} — ${g.fos >= g.req ? 'OK' : 'FAIL'}` });
     else steps.push({ title: 'Verification', formula: 'Hd ≤ Rd + Rp;d', substitution: `${f1(g.H)} ≤ ${f1(g.RdTotal)}`, result: `Utilisation ${f3(g.util)} — ${g.util <= 1 ? 'OK' : 'FAIL'}` });
   }
@@ -334,10 +335,12 @@ export function pressureDistribution(V, e, B, L) {
 
 export function checkEccentricity(ctx, bearing) {
   const { geom } = ctx;
-  const rigid = geom.pad.t > 0 && geom.pad.rigid;
-  const cutSpec = rigid ? { kind: 'formation' } : { kind: 'base' };
-  const zb = rigid ? -geom.pad.t : 0;
-  const bf = geom.baseFoot;
+  // One width throughout: B = founding width at the formation (the footing
+  // used for E1 and the formation pressure). The bottom course width is
+  // reported separately.
+  const ft = geom.footing;
+  const zb = -geom.pad.t;
+  const courseB = geom.courses[0].u1 - geom.courses[0].u0;
   let gov = null;
   let govQ = null;
   const rows = [];
@@ -345,22 +348,17 @@ export function checkEccentricity(ctx, bearing) {
     if (sit.kind === 'accidental') return;
     signs(geom).forEach((sign) => {
       const phiFill = geom.fill.phi;
-      const items = factorItems(freeBody(geom, cutSpec, { sit, phiFill }).items, { F: ctx.F, cat: 'SLSc', sit, check: 'sls', sign });
+      const items = factorItems(freeBody(geom, { kind: 'formation' }, { sit, phiFill }).items, { F: ctx.F, cat: 'SLSc', sit, check: 'sls', sign });
       const { V, Hu, Hv } = sums(items);
       const { uR } = resultantU(items, zb);
       const { vR } = resultantV(items, zb);
-      const eB = uR - (bf.u0 + bf.u1) / 2, eL = vR - (bf.v0 + bf.v1) / 2;
-      const kern = Math.abs(eB) / bf.B + Math.abs(eL) / bf.L;
-      const util = Math.max(Math.abs(eB) / (bf.B / 6), Math.abs(eL) / (bf.L / 6), kern / (1 / 6));
-      const r = { label: comboLabel(sit, 'SLSc', sign), V, H: Math.hypot(Hu, Hv), Hu, Hv, uR, xRtoe: uR - bf.u0, eB, eL, kern, util, B: bf.B, L: bf.L, sit };
-      // Formation pressure (effective footing for a granular pad).
-      const fItems = rigid ? items : factorItems(freeBody(geom, { kind: 'formation' }, { sit, phiFill }).items, { F: ctx.F, cat: 'SLSc', sit, check: 'sls', sign });
-      const ft = geom.footing;
-      const fr = resultantU(fItems, -geom.pad.t);
-      const eF = fr.uR - (ft.u0 + ft.u1) / 2;
-      const pd = pressureDistribution(fr.V, eF, ft.B, ft.L);
-      const eff = effectiveArea(ft.B, ft.L, eF, 0);
-      r.formation = { V: fr.V, e: eF, ...pd, B: ft.B, L: ft.L, qMeanEff: fr.V / Math.max(eff.A, 1e-9), qMean: fr.V / (ft.B * ft.L), Bp: eff.Bp };
+      const eB = uR - (ft.u0 + ft.u1) / 2, eL = vR - (ft.v0 + ft.v1) / 2;
+      const kern = Math.abs(eB) / ft.B + Math.abs(eL) / ft.L;
+      const util = Math.max(Math.abs(eB) / (ft.B / 6), Math.abs(eL) / (ft.L / 6), kern / (1 / 6));
+      const r = { label: comboLabel(sit, 'SLSc', sign), V, H: Math.hypot(Hu, Hv), Hu, Hv, uR, xRtoe: uR - ft.u0, eB, eL, kern, util, B: ft.B, L: ft.L, courseB, sit };
+      const pd = pressureDistribution(V, eB, ft.B, ft.L);
+      const eff = effectiveArea(ft.B, ft.L, eB, 0);
+      r.formation = { V, e: eB, ...pd, B: ft.B, L: ft.L, qMeanEff: V / Math.max(eff.A, 1e-9), qMean: V / (ft.B * ft.L), Bp: eff.Bp };
       rows.push(r);
       if (!gov || r.util > gov.util) gov = r;
       if (!govQ || r.formation.qmax > govQ.formation.qmax) govQ = r;
@@ -375,7 +373,7 @@ export function checkEccentricity(ctx, bearing) {
   }
   const steps = [];
   if (gov) {
-    steps.push({ title: `SLS characteristic resultant — ${gov.label}`, formula: 'u_R = [Σ u·Fz + Σ z·Fu] / V (moments about the front toe);  e = u_R − B/2', substitution: `V = ${f1(gov.V)} kN, H = ${f1(gov.H)} kN, x_R from toe = ${f3(gov.xRtoe)} m, B = ${f3(gov.B)} m`, result: `e_B = ${f3(gov.eB)} m (B/6 = ${f3(gov.B / 6)} m); e_L = ${f3(gov.eL)} m` });
+    steps.push({ title: `SLS characteristic resultant at the formation — ${gov.label}`, formula: 'u_R = [Σ u·Fz + Σ z·Fu] / V (moments about the front of the founding width);  e = u_R − B/2;  B = founding width at the formation, used for the kern, the pressure and A′', substitution: `V = ${f1(gov.V)} kN, H = ${f1(gov.H)} kN, x_R = ${f3(gov.xRtoe)} m, B = ${f3(gov.B)} m (bottom course ${f3(gov.courseB)} m)`, result: `e_B = ${f3(gov.eB)} m (B/6 = ${f3(gov.B / 6)} m); e_L = ${f3(gov.eL)} m` });
     steps.push({ title: 'Middle-third (kern) check at SLS', formula: '|e_B| ≤ B/6; |e_L| ≤ L/6; |e_B|/B + |e_L|/L ≤ 1/6', substitution: `${f3(Math.abs(gov.eB))} vs ${f3(gov.B / 6)}; kern ratio ${f3(gov.kern)} vs 0.167`, result: `Utilisation ${f3(gov.util)} — ${gov.util <= 1 ? 'resultant within middle third' : 'OUTSIDE middle third'}` });
   }
   if (govQ) {

@@ -13,19 +13,27 @@ export function checkLocal(ctx, layout) {
   const nb = Math.max(1, Number(P.bearingsPerEnd) || 1);
   const F = ctx.F.C1;
 
-  // Governing ULS (STR, set A1 = DA1-C1 factors) reactions per bearing.
-  let fz = 0, fu = 0, fv = 0, govLabel = '';
+  // Governing ULS (STR, set A1 = DA1-C1 factors) reactions on each bearing,
+  // from that bearing's own items (bearing-by-bearing load resolution).
+  let fz = 0, fu = 0, fv = 0, govLabel = '', govBearing = 0;
   if (bridge) {
     ctx.situations.filter((s) => s.deck && s.kind !== 'accidental').forEach((sit) => {
-      let z = 0, u = 0, v = 0;
+      const per = Array.from({ length: nb }, () => ({ z: 0, u: 0, v: 0 }));
       geom.bridgeItems.forEach((it) => {
-        const m = it.tag === 'Q' ? sit.mult(it) : 1;
+        if (it.group === 'Con') return;
+        const k = Number.isInteger(it.bearing) ? it.bearing : null;
+        let m = it.tag === 'Q' ? sit.mult(it) : 1;
         const g = it.tag === 'G' ? F.gGsup : ['Qv', 'Qb', 'Qf'].includes(it.group) ? F.gQt : F.gQo;
-        z += it.Fz * g * m;
-        u += Math.abs(it.Fu) * g * m;
-        v += Math.abs(it.Fv) * g * m;
+        const zf = it.Fz * g * m;
+        if (zf < 0) m = 0; // uplift does not add to seat compression
+        (k === null ? per : [per[k]]).forEach((p) => {
+          const share = k === null ? 1 / nb : 1;
+          p.z += Math.max(0, zf) * share;
+          p.u += Math.abs(it.Fu) * g * Math.abs(m) * share;
+          p.v += Math.abs(it.Fv) * g * Math.abs(m) * share;
+        });
       });
-      if (z / nb > fz) { fz = z / nb; fu = u / nb; fv = v / nb; govLabel = sit.label; }
+      per.forEach((p, k) => { if (p.z > fz) { fz = p.z; fu = p.u; fv = p.v; govLabel = sit.label; govBearing = k; } });
     });
   }
 
@@ -35,8 +43,8 @@ export function checkLocal(ctx, layout) {
     const sigma = fz / Ap / 1000;
     const util = sigma / LEGATO_CONCRETE.fcdPl;
     out.push({
-      id: 'L1', title: 'Bearing seat compression', clause: 'BS EN 1992-1-1 12.6.1 (plain concrete)', util, pass: util <= 1,
-      steps: [{ title: `Bearing seat compression — ${govLabel || 'no deck loads'}`, formula: 'σ = Fz,d / (L_p × B_p) ≤ fcd,pl (EC2 6.7 concentrated-load enhancement not used — unreinforced, splitting risk)', substitution: `Fz,d = ${f1(fz)} kN per bearing (DA1-C1 / STR factors); plate ${P.bearingPlateL} × ${P.bearingPlateB} mm`, result: `σ = ${f2(sigma)} N/mm² vs ${LEGATO_CONCRETE.fcdPl} N/mm²; utilisation ${f3(util)}` }],
+      id: 'L1', title: 'Bearing seat compression', clause: 'BS EN 1992-1-1 12.6.1 (plain concrete)', util, pass: util <= 1, Fzd: fz, bearing: govBearing,
+      steps: [{ title: `Bearing seat compression — ${govLabel || 'no deck loads'}`, formula: 'σ = Fz,d / (L_p × B_p) ≤ fcd,pl (EC2 6.7 concentrated-load enhancement not used — unreinforced, splitting risk)', substitution: `Fz,d = ${f1(fz)} kN on bearing ${govBearing + 1} (DA1-C1 / STR factors); plate ${P.bearingPlateL} × ${P.bearingPlateB} mm`, result: `σ = ${f2(sigma)} N/mm² vs ${LEGATO_CONCRETE.fcdPl} N/mm²; utilisation ${f3(util)}` }],
     });
   }
 

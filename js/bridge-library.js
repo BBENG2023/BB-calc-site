@@ -119,7 +119,7 @@ export const BRIDGE_RANGES = {
     ],
     toDesign(row, loading = 'CS454+SV80DOF') {
       const cs = halfR(row.CS454);
-      const models = [{ name: 'CS 454', excludeSurchargeWind: false }];
+      const models = [{ name: 'CS 454', standard: 'CS 454 / SV', excludeSurchargeWind: false }];
       const reactions = [
         r('Dead load (total ÷ 2)', 'G', { Z: row.DL / 2 }),
         r('CS 454 normal traffic', 'Qv', { model: 'CS 454', Z: row.CS454, ...NORMAL }),
@@ -128,7 +128,7 @@ export const BRIDGE_RANGES = {
       if (loading !== 'CS454') {
         const dof = loading === 'CS454+SV80DOF';
         const name = dof ? 'SV-80 (DAF + OF)' : 'SV-80';
-        models.push({ name, excludeSurchargeWind: true });
+        models.push({ name, standard: 'CS 454 / SV', excludeSurchargeWind: true });
         reactions.push(r(name, 'Qv', { model: name, Z: dof ? row.SV80 : row.SV80p, ...ABNORMAL }));
         reactions.push(r(`SV-80 braking (table, total ÷ 2) + transverse — ${name}`, 'Qb', { model: name, X: row.brk / 2, Y: row.trans, reversible: true, ...ABNORMAL }));
       }
@@ -164,8 +164,8 @@ export const BRIDGE_RANGES = {
     toDesign(row, loading = 'CS454+SVall') {
       const n = Math.max(1, Math.round(row.B / 1.5));
       const sv = loading === 'CS454' ? [] : loading === 'CS454+SV80' ? ['SV-80'] : ['SV-80', 'SV-100', 'SV-150', 'SV-196'];
-      const models = [{ name: 'CS 454', excludeSurchargeWind: false }, ...sv.map((m) => ({ name: m, excludeSurchargeWind: true }))];
-      if (row.twoLane && sv.length) models.push({ name: '2-lane SV + CS 454', excludeSurchargeWind: false });
+      const models = [{ name: 'CS 454', standard: 'CS 454 / SV', excludeSurchargeWind: false }, ...sv.map((m) => ({ name: m, standard: 'CS 454 / SV', excludeSurchargeWind: true }))];
+      if (row.twoLane && sv.length) models.push({ name: '2-lane SV + CS 454', standard: 'CS 454 / SV', excludeSurchargeWind: false });
       const val = { 'CS 454': row.CS454, 'SV-80': row.SV80, 'SV-100': row.SV100, 'SV-150': row.SV150, 'SV-196': row.SV196, '2-lane SV + CS 454': row.twoLane };
       const brkX = (m) => (m === 'CS 454' ? halfR(row.CS454).total / 2 : row.brkA / 2);
       return {
@@ -201,14 +201,16 @@ export const BRIDGE_RANGES = {
       'Minimum bearing CL to ballast wall: 500 mm (crane installation) or 1250 mm (launching) — set the seat geometry to suit.',
     ],
     toDesign(row, loading = 'M2+SV80') {
-      const models = [{ name: 'Model 2 (all)', excludeSurchargeWind: false }];
+      // "Model 2" is the supplier's own loading designation on the drawing — not
+      // EN 1991-2 LM2 or BD37 HA. Printed as supplier-defined (verify).
+      const models = [{ name: 'Model 2 (all)', standard: 'Supplier', excludeSurchargeWind: false }];
       const reactions = [
         r('Dead load (total ÷ 2)', 'G', { Z: row.DL / 2 }),
         r('All Model 2 worst case (2 × corner)', 'Qv', { model: 'Model 2 (all)', Z: 2 * row.M2, ...NORMAL }),
         r('Model 2 braking (0.5 R, fixed end)', 'Qb', { model: 'Model 2 (all)', X: halfR(2 * row.M2).total, reversible: true, xFixedOnly: true, ...NORMAL, psi0: 0 }),
       ];
       const add = (name, Z) => {
-        models.push({ name, excludeSurchargeWind: true });
+        models.push({ name, standard: name === 'SV-80' ? 'CS 454 / SV' : 'Supplier', excludeSurchargeWind: true });
         reactions.push(r(`${name} (2 × corner)`, 'Qv', { model: name, Z, ...ABNORMAL }));
         reactions.push(r(`Braking (whole bridge, fixed end) — ${name}`, 'Qb', { model: name, X: row.brk, reversible: true, xFixedOnly: true, ...ABNORMAL }));
       };

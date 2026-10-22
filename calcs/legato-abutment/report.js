@@ -2,10 +2,12 @@
 // on its own sheet(s) with "Sheet x of y", a disclaimer strip and the CEng
 // statement on every sheet, and the full sign-off block at the end.
 
+import { normaliseLoads } from './actions.js';
+import { LOAD_STANDARDS } from './engine.js';
 import { buildSheetHeader, buildSignoff, buildFooter, el } from '../../js/report.js';
 import { escapeHtml } from '../../js/formatters.js';
 import { FACTOR_PRESETS, LEGATO_BLOCKS } from '../../js/shared-data.js';
-import { drawingD1, diagramD2, drawingD3, drawingD4, drawingD5, drawingD6 } from './drawings.js';
+import { drawingD1, diagramD2, drawingD3, drawingD3b, drawingD4, drawingD5, drawingD6 } from './drawings.js';
 import { defaultClauses, defaultDRA } from './spec.js';
 import { REACTION_GROUPS } from './schema.js';
 import { nibDesign } from './checks-internal.js';
@@ -43,7 +45,7 @@ export function buildReport(state, output, headerDetails = {}, calc) {
 
   // 1 Brief and scope.
   add(1, 'Brief and scope', `
-    <p><strong>${e(state.meta.presetName || '')}</strong>${state.meta.notes ? ` — ${e(state.meta.notes)}` : ''}</p>
+    ${state.meta.validation ? `<p><strong>Validation case: ${e(state.meta.presetName || '')}</strong></p>` : ''}${state.meta.notes ? `<p>${e(state.meta.notes)}</p>` : ''}
     <p>${bridge ? `Design of dry-laid Legato interlocking block bank seats for a single-span bridge (${e(P.bridgeDescription || '')}): span ${fx(P.span, 3)} m bearing to bearing, deck ${fx(P.deckWidth, 2)} m wide, ${P.bearingsPerEnd} bearings per end, ${Number(P.fixedEnd) === 0 ? `both ends fixed` : `fixed end ${P.fixedEnd}`}, skew ${P.skew}°.` : 'Retaining-wall mode (Elite guide method): single section per metre run, no bridge or crossing checks.'}</p>
     <p>Status: ${e(P.status)} works; design life ${P.designLife} years (Legato blocks rated &gt; 100 years by Elite). Mode: ${endsL.map((x) => `${e(x.label)} ${state.ends[x.endIdx].arrangement.mode === 'auto' ? 'auto-sized' : 'checked'}`).join(', ')}.</p>
     <p>Scope: ground model from SPT boreholes; bridge reactions, approach earth pressures and hydraulic actions; block arrangement and coursing to levels; external, internal and local stability; overall stability; settlement; crossing checks; construction stages; drawings, schedules, specification, designer’s risk assessment and PLT requirement.</p>
@@ -65,7 +67,12 @@ export function buildReport(state, output, headerDetails = {}, calc) {
 
   // 3 Bridge data and loads.
   if (bridge) {
-    const rows = (state.loads.reactions || []).map((r) => [e(r.name), e(REACTION_GROUPS.find((g) => g.value === r.group)?.label || r.group), e(r.model || ''), r.basis === 'perBearing' ? 'per bearing' : 'total', Number(r.X) || 0, Number(r.Y) || 0, Number(r.Z) || 0, r.reversible ? '±' : '', r.xFixedOnly ? 'fixed end' : 'both', `${r.psi0}/${r.psi1}/${r.psi2}`, e(r.end)]);
+    const NL = normaliseLoads(state);
+    const uLab = { kN: 'kN', t: 'tonnes', 'kN/truss': 'kN per truss (bearing)', 't/truss': 'tonnes per truss (bearing)' }[NL.unit] || NL.unit;
+    const kn = (x) => fx(x, 1);
+    const rows = NL.reactions.map((r) => [e(r.name), e(REACTION_GROUPS.find((g) => g.value === r.group)?.label || r.group), e(r.model || ''), r.basis === 'perBearing' ? 'per bearing' : 'total', kn(r.X), kn(r.Y), kn(r.Z), r.reversible ? '±' : '', r.xFixedOnly ? 'fixed bearings' : 'all bearings', `${r.psi0}/${r.psi1}/${r.psi2}`, e(r.end)]);
+    const models = endsL[0].geom.models || [];
+    const bearingRows = endsL.flatMap((x) => (x.geom.bearings || []).map((b) => [e(x.label), b.k + 1, fx(b.v, 3), b.autoV ? 'auto (bearing centres)' : 'user', b.fixity]));
     const sits = endsL[0].situations.map((s) => [e(s.id), e(s.label), s.kind]);
     const lib = state.loads.library;
     const range = lib && lib.range !== 'bespoke' ? BRIDGE_RANGES[lib.range] : null;
@@ -77,8 +84,12 @@ export function buildReport(state, output, headerDetails = {}, calc) {
     add(3, 'Bridge data and loads', `
       ${libHTML}
       <p>Bearing plate ${P.bearingPlateL} × ${P.bearingPlateB} mm, assembly height ${P.bearingHeight} mm; free-end sliding μ = ${P.slidingMu} (free-end X = ±μ(G + concurrent vertical traffic)). Horizontal loads applied at seat level + grout + bearing height.</p>
-      ${tableHTML(['Case', 'Group', 'Model', 'Basis', 'X kN', 'Y kN', 'Z kN', '±', 'X resisted', 'ψ0/ψ1/ψ2', 'End'], rows)}
-      <p>Traffic models: ${state.loads.trafficModels.map((m) => `${e(m.name)}${m.excludeSurchargeWind ? ' (approach surcharge and wind excluded when this model acts)' : ''}`).join('; ')}. Models are non-coexistent — each forms its own combinations. Where per-corner maxima are summed for an abutment total, this is conservative for bearing and irrelevant for sliding/overturning (vertical traffic favourable, set to zero).</p>
+      <p>Reaction schedule entered in <strong>${e(uLab)}</strong>${NL.k !== 1 ? ' and converted to kN with g = 9.81 m/s²' : ''}. Values below are characteristic, in kN.</p>
+      ${tableHTML(['Case', 'Group', 'Model', 'Basis', 'X kN', 'Y kN', 'Z kN', '±', 'X resisted at', 'ψ0/ψ1/ψ2', 'End'], rows)}
+      ${NL.notes.length ? `<p class="lg-mod">${NL.notes.map(e).join('<br>')}</p>` : ''}
+      ${h5('Bearings')}${tableHTML(['End', 'Bearing', 'v from end of abutment (m)', 'Position', 'Fixity'], bearingRows)}
+      <p>Fixed bearings take longitudinal braking and wind (actions marked "fixed bearings"), shared equally between the fixed bearings at that end. Fixed and guided bearings take transverse actions. Free and guided bearings carry ±μ(G + concurrent vertical traffic) longitudinally, μ = ${P.slidingMu}.</p>
+      <p>Traffic models: ${models.length ? models.map((m) => `<strong>${e(m.name)}</strong> — ${e(LOAD_STANDARDS.find((x) => x[0] === (m.standard || ''))?.[1] || 'load model not chosen')}${m.excludeSurchargeWind ? ' (approach surcharge and wind excluded when this model acts)' : ''}`).join('; ') : 'none'}. Models are non-coexistent — each forms its own combinations. Where per-corner maxima are summed for an abutment total, this is conservative for bearing and irrelevant for sliding/overturning (vertical traffic favourable, set to zero).</p>
       <p>Approach surcharge q = ${state.loads.surcharge} kPa (acts with the leading traffic model; ψ0 = ${state.loads.surchargePsi0} when accompanying), setback ${state.loads.surchargeSetback} m. Compaction pressure: ${state.loads.compaction.on ? `σ′h = ${state.loads.compaction.sigma} kPa, zc = ${state.loads.compaction.zc} m` : 'not included'}. Differential water head ${state.loads.waterHead} m.</p>
       ${state.loads.launch.length ? tableHTML(['Launch load', 'u m', 'v m', 'Fz kN', 'Fu kN', 'Fv kN', 'Source'], state.loads.launch.map((r) => [e(r.name), r.u, r.v, r.Fz, r.Fu, r.Fv, e(r.source || '')])) : '<p>No launch/erection point loads entered.</p>'}
       ${h5('Design situations (both ends)')}${tableHTML(['Id', 'Situation', 'Kind'], sits)}
@@ -145,13 +156,26 @@ export function buildReport(state, output, headerDetails = {}, calc) {
   endsL.forEach((x) => {
     const C = x.checks;
     const n = x.endIdx + 1;
-    const sum = [C.E1, C.E2, C.E3, C.E4, C.E7].filter(Boolean).map((c) => [c.id, e(c.title), e(c.clause || ''), c.na ? 'n/a' : ut(c.util), e((D.ends[x.endIdx].util.find((u) => u.id === c.id)?.gov) || '')]);
+    const sum = [C.E1, C.E2, C.E3, C.E4, C.E7].filter(Boolean).map((c) => [c.id, e(c.title), e(c.clause || ''), c.na ? 'n/a' : ut(c.util), e(`${(D.ends[x.endIdx].util.find((u) => u.id === c.id)?.gov) || ''}${c.zone && (x.dispersion?.zones?.length || 0) > 1 ? ` [${c.zone}]` : ''}`)]);
     const legacy = [
       ['Sliding', C.E2.legacy ? fx(C.E2.legacy.fos, 3) : '—', F.legacy.sliding],
       ['Overturning', C.E3.legacy ? fx(C.E3.legacy.fos, 3) : '—', F.legacy.toppling],
       ...(C.E1.legacy ? [['Bearing', fx(C.E1.legacy.fos, 2), F.legacy.bearing]] : []),
     ];
+    const dsp = x.dispersion || { zones: [], paths: [] };
+    const modeTxt = { bond: 'bond-based (each course spreads the load to the full length of the blocks it overlaps below)', none: 'none — plumb stack under the bearing (lower bound)', angle: `angle ${fx(state.ends[x.endIdx].arrangement.dispersion?.angleRatio ?? 2, 1)}V:1H per course, capped by the bond result (${e(state.ends[x.endIdx].arrangement.dispersion?.justification || '')})`, full: 'full length (RC capping beam / distribution slab)' }[dsp.mode] || dsp.mode;
+    const zoneRows = dsp.zones.map((z) => [e(z.name), fx(z.L, 3), z.bearings.length ? z.bearings.map((k) => k + 1).join(', ') : '—', ut(z.E1), ut(z.E2), ut(z.E3), ut(z.E4), z.s !== null ? fx(z.s, 1) : '—']);
+    const pathRows = dsp.paths.map((pth) => [`B${pth.k + 1}`, fx(pth.v, 3), pth.courses.map((c) => `C${c.idx} ${fx(c.b - c.a, 2)}`).join(' · '), fx(pth.formation[1] - pth.formation[0], 3), pth.straddle ? '⚠ straddles a joint' : '']);
+    const loadPath = bridge ? `
+      ${h5('Load path through the blocks (local distribution)', `rep-e${n}-LP`)}
+      <p>Dispersion: ${modeTxt}. The blocks are dry-laid with no friction or tension on vertical joints, so a bearing load reaches only the blocks it bears on. Pad spread ${state.basis.spread}V:1H. E1–E4 and settlement are checked on each zone as its own prism; the governing zone is reported below.</p>
+      ${pathRows.length ? tableHTML(['Bearing', 'v (m)', 'Loaded length per course (m)', 'L_eff at formation (m)', ''], pathRows, 'lg-small') : ''}
+      ${tableHTML(['Zone', 'L (m)', 'Bearings', 'E1', 'E2', 'E3', 'E4', 'Settlement (mm)'], zoneRows, 'lg-small')}
+      ${dsp.fullLength ? `<p>For comparison, whole-length results (v1.2 method): E1 ${ut(dsp.fullLength.E1)}, E2 ${ut(dsp.fullLength.E2)}, E3 ${ut(dsp.fullLength.E3)}, E4 ${ut(dsp.fullLength.E4)}.</p>` : ''}
+      ${x.capBeam ? `<p><strong>Capping beam (verify):</strong> ${fx(x.capBeam.b * 1000, 0)} × ${fx(x.capBeam.h * 1000, 0)} mm, As ${fx(x.capBeam.As, 0)} mm² per face; rigid beam on uniform reaction — MEd ${fx(x.capBeam.Mmax, 1)} / MRd ${fx(x.capBeam.MRd, 1)} kNm, VEd ${fx(x.capBeam.Vmax, 1)} / VRd,c ${fx(x.capBeam.VRd, 1)} kN (BS EN 1992-1-1 6.1, 6.2.2). Utilisation ${ut(x.capBeam.util)}.</p>` : ''}
+      <div class="lg-drawing">${drawingD3b(state, D, x.endIdx)}</div>` : '';
     add(7, `External stability — ${x.label}`, `
+      ${loadPath}
       ${tableHTML(['Check', 'Title', 'Clause', 'Utilisation', 'Governing combination'], sum)}
       ${h5('Legacy unity-factor FoS (for comparison)')}${tableHTML(['Check', 'FoS', 'Target'], legacy)}
       ${h5('E1 Bearing — governing combination', `rep-e${n}-E1`)}${stepsHTML(C.E1.steps)}
@@ -193,7 +217,7 @@ export function buildReport(state, output, headerDetails = {}, calc) {
   }
 
   // 11 Settlement.
-  add(11, 'Settlement', `${endsL.map((x) => `${h5(`${x.label} — total ${x.settle ? fx(x.settle.total, 1) : '—'} mm (limit ${state.ends[x.endIdx].settlementLimit} mm)${x.settle ? `, tilt 1 in ${x.settle.tilt > 0 ? Math.round(1 / x.settle.tilt) : '∞'}` : ''}`, `rep-e${x.endIdx + 1}-E6`)}${x.settle ? stepsHTML(x.settle.steps) : ''}`).join('')}
+  add(11, 'Settlement', `${endsL.map((x) => `${h5(`${x.label} — total ${x.settle ? fx(x.settle.total, 1) : '—'} mm (limit ${x.settle?.limit ?? 25} mm)${x.settle ? `, tilt 1 in ${x.settle.tilt > 0 ? Math.round(1 / x.settle.tilt) : '∞'} (limit 1 in ${x.settle.tiltLimit}), transverse differential ${fx(x.settle.transDiff || 0, 1)} mm (limit ${x.settle.transLimit} mm), loaded vs unloaded zone ${fx(x.settle.alongDiff || 0, 1)} mm` : ''}`, `rep-e${x.endIdx + 1}-E6`)}${x.settle ? stepsHTML(x.settle.steps) : ''}`).join('')}
     ${D.diff ? `<p>Differential settlement between ends: ${fx(D.diff.d, 1)} mm vs ${D.diff.limit} mm limit — ${D.diff.util <= 1 ? 'OK' : 'EXCEEDS'} (replace limits with the bridge supplier’s).</p>` : ''}`);
 
   // 12 Crossing checks.
@@ -206,6 +230,10 @@ export function buildReport(state, output, headerDetails = {}, calc) {
   // 13 Utilisation summary and verdict.
   add(13, 'Utilisation summary and verdict', `
     <div class="lg-drawing">${drawingD6(state, D)}</div>
+    ${tableHTML(['End', 'Check', 'Utilisation', 'Status', 'Governing zone / case'], endsL.flatMap((x) => x.util.filter((u) => !u.info).map((u) => [e(x.label), `${e(u.id)} ${e(u.title)}`, ut(u.util), u.util > 1 ? '✗ FAIL' : u.util > 0.9 ? '! NEAR' : '✓ OK', e(u.zone || u.gov || '')])), 'lg-small')}
+    ${D.blocked?.length ? `<div class="lg-blocked"><strong>NOT VALID — RE-RUN / RESOLVE</strong><ul>${D.blocked.map((b) => `<li>${e(b)}</li>`).join('')}</ul></div>` : ''}
+    ${D.overrides?.length ? `${h5('Overrides')}<div class="lg-overrides">${tableHTML(['Item', 'Value', 'Default', 'Justification', 'Status'], D.overrides.map((o) => [e(o.item), e(String(o.value)), e(String(o.default)), e(o.justification || '— none —'), o.status === 'applied' ? 'APPLIED' : o.status === 'rejected' ? 'REJECTED' : 'IGNORED (no justification)']))}</div>` : ''}
+    ${D.diff ? `<p>Differential settlement end to end ${fx(D.diff.d, 1)} mm (limit ${D.diff.limit} mm); deck tilt 1 in ${D.diff.tilt > 0 ? Math.round(1 / D.diff.tilt) : '∞'}. Settlement limits are defaults unless overridden — replace with the bridge supplier's limits.</p>` : ''}
     <div class="rs-verdict">${output.verdict.pass ? 'PASS' : 'FAIL / INCOMPLETE'} — ${e(output.verdict.message)}</div>
     ${D.errors.length || D.xFails.length ? `<ul class="rs-bullets">${[...D.errors, ...D.xFails].map((w) => `<li>${e(w)}</li>`).join('')}</ul>` : ''}`);
 
@@ -243,12 +271,13 @@ export function buildReport(state, output, headerDetails = {}, calc) {
   sheets.forEach((s, i) => {
     const sheet = el('div', `report-sheet rs-border lg-sheet${s.a3 ? ' lg-a3' : ''}`);
     const label = `${start + i} of ${ofText}`;
-    const [head, titleBar] = buildSheetHeader(calc, headerDetails, label, `${calc.title} — ${s.num}. ${s.title}`);
+    const [head, titleBar] = buildSheetHeader(calc, headerDetails, label, `${calc.title} — ${s.num}. ${s.title}`, { flagMissing: true });
     const body = el('div', 'rs-body');
     body.innerHTML = `${h4(s.num, s.title)}${s.html}`;
     const disc = el('div', 'lg-disclaimer', 'DESIGN OUTPUT — REQUIRES CEng REVIEW BEFORE ACCEPTANCE. Advisory until independently verified and signed off by a Chartered Engineer (CEng MICE / MIStructE). Eurocodes with UK NAs, DMRB and client standards apply; CDM 2015 design duties remain with the designer.');
     const sign = s.signoff ? buildSignoff() : compactSignoff();
     sheet.append(head, titleBar, body, disc, sign, buildFooter(`Sheet ${label}`));
+    if (D.blocked?.length) sheet.append(el('div', 'lg-watermark', 'NOT VALID — RE-RUN / RESOLVE'));
     wrap.append(sheet);
   });
   return wrap;

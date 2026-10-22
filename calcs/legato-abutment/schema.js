@@ -27,11 +27,28 @@ export const REACTION_GROUPS = [
   { value: 'G2', label: 'G2 — superimposed' },
   { value: 'Qv', label: 'Q — traffic vertical (model)' },
   { value: 'Qb', label: 'Q — braking (model)' },
-  { value: 'Qw', label: 'Q — wind' },
+  { value: 'Qw', label: 'Q — wind (horizontal)' },
+  { value: 'Qwv', label: 'Q — wind vertical (± up/down)' },
   { value: 'Qt', label: 'Q — thermal' },
   { value: 'Con', label: 'Construction / launch' },
   { value: 'A', label: 'Accidental' },
 ];
+
+// Traffic load model standards (label printed on the report).
+export const LOAD_STANDARDS = [
+  ['', '— choose the load model —'],
+  ['BD37 HA', 'BD37 HA (nominal, incl. impact)'],
+  ['BD37 HB', 'BD37 HB'],
+  ['EN 1991-2 LM1', 'EN 1991-2 LM1'],
+  ['EN 1991-2 LM2', 'EN 1991-2 LM2'],
+  ['CS 454 / SV', 'CS 454 / SV vehicles (assessment)'],
+  ['Footbridge', 'Footbridge (EN 1991-2 §5)'],
+  ['Supplier', 'Supplier-defined (see source)'],
+  ['Bespoke', 'Bespoke'],
+];
+
+// Reaction schedule units. "per truss" = per bearing.
+export const LOAD_UNITS = [['kN', 'kN'], ['t', 'tonnes'], ['kN/truss', 'kN per truss (bearing)'], ['t/truss', 'tonnes per truss (bearing)']];
 
 export const STRATUM_CLASSES = ['Topsoil', 'Peat', 'Made ground', 'Cohesive', 'Granular', 'Weathered rock', 'Rock'];
 export const UNSUITABLE = new Set(['Topsoil', 'Peat', 'Made ground']);
@@ -95,8 +112,15 @@ export function newEnd(n) {
       passive: false,
       kpMob: 0.5,
       frontFillOnToe: false,
+      // Load path from the bearings through the courses (dispersion.js).
+      dispersion: { mode: 'bond', angleRatio: 2, justification: '', capBeam: { on: false, b: null, h: null, As: null, fck: 32, fyk: 500, cover: 50 } },
     },
     settlementLimit: 25,
+    settlementLimitJust: '',
+    formationMuJust: '',
+    // Per-bearing position along the face (v_mm, blank = at bearing centres)
+    // and fixity ('fixed' | 'guided' | 'free', blank = from the fixed end).
+    bearings: [],
   };
 }
 
@@ -139,7 +163,7 @@ export function newReaction(o = {}) {
 export function blankState() {
   return {
     schemaVersion: SCHEMA_VERSION,
-    meta: { presetName: 'Blank', notes: '' },
+    meta: { presetName: 'Blank', notes: '', validation: false },
     project: {
       mode: 'bridge',
       bridgeDescription: 'Modular panel bridge',
@@ -182,6 +206,9 @@ export function blankState() {
       backfillSlope: 0,
       spread: 2,
       settlementDiffLimit: 20,
+      tiltLimit: 500,
+      transDiffLimit: 10,
+      settlementJust: '',
       legacyBearing: false,
       nearSlopeFactor: true,
       baseInclination: 0,
@@ -191,7 +218,9 @@ export function blankState() {
       // user-entered reactions. `sig` fingerprints the applied rows so edits
       // after applying are reported as "modified from library".
       library: { range: 'bespoke', row: null, sig: null },
-      trafficModels: [{ name: 'LM1', excludeSurchargeWind: false }],
+      unit: 'kN',
+      thermalRestraint: { F: null, justification: '' },
+      trafficModels: [{ name: 'LM1', standard: 'EN 1991-2 LM1', excludeSurchargeWind: false }],
       reactions: [
         newReaction({ name: 'Deck self-weight', group: 'G', Z: 100, psi0: 1, psi1: 1, psi2: 1 }),
         newReaction({ name: 'Surfacing & parapets', group: 'G2', Z: 20, psi0: 1, psi1: 1, psi2: 1 }),
@@ -224,6 +253,7 @@ export function blankState() {
       regulatoryBuffer: 8,
       scourMargin: 0.3,
       minSetback: 1.0,
+      watercourse: true,
     },
     ends: [newEnd(1), newEnd(2)],
     boreholes: [],
@@ -316,7 +346,10 @@ export const FIELDS = {
     { path: 'basis.nearSlopeFactor', label: 'Apply Vesic ground-inclination factor when setback b < 2B', type: 'checkbox', help: 'gq = gγ = (1 − tan β)². Conservative; E5 must also pass.' },
     { path: 'basis.baseInclination', label: 'Base inclination α (back-batter option)', unit: '°', min: 0, max: 5, step: 0.1, help: 'BS 8002 1:50 back-batter = 1.15°. 0 = level base.' },
     { path: 'basis.legacyBearing', label: 'Report legacy bearing FoS ≥ 3.0', type: 'checkbox' },
-    { path: 'basis.settlementDiffLimit', label: 'Differential settlement limit', unit: 'mm', min: 1, step: 1, bridgeOnly: true, help: 'Default 20 mm — replace with bridge supplier limits.' },
+    { path: 'basis.settlementDiffLimit', label: 'Differential settlement end to end', unit: 'mm', min: 1, step: 1, bridgeOnly: true, override: 20, help: 'Default 20 mm — replace with the bridge supplier’s limits.' },
+    { path: 'basis.tiltLimit', label: 'Tilt limit (1 in …)', min: 50, step: 10, override: 500, help: 'Default 1 in 500 — replace with the bridge supplier’s limits (BS EN 1997-1 2.4.8, Annex H).' },
+    { path: 'basis.transDiffLimit', label: 'Transverse differential between bearings', unit: 'mm', min: 1, step: 1, bridgeOnly: true, override: 10, help: 'Default 10 mm — replace with the bridge supplier’s limits.' },
+    { path: 'basis.settlementJust', label: 'Justification for non-default settlement criteria (required)', type: 'text', showIf: (s) => Number(s.basis.settlementDiffLimit) !== 20 || Number(s.basis.tiltLimit) !== 500 || Number(s.basis.transDiffLimit) !== 10 },
   ],
   loads: [
     { path: 'loads.surcharge', label: 'Approach surcharge q', unit: 'kPa', min: 0, step: 0.5, help: '20 kPa vehicular / 10 kPa pedestrian (BS 8002:2015; PD 6694-1). Editable.' },
@@ -348,9 +381,10 @@ export const FIELDS = {
     { path: 'loads.impact.dir', label: 'Direction', type: 'select', options: [['u', 'Normal to face'], ['v', 'Along face']], showIf: (s) => s.loads.impact.on },
   ],
   crossing: [
+    { path: 'crossing.watercourse', label: 'Crossing over a watercourse (DFL required)', type: 'checkbox' },
     { path: 'crossing.bedLevel', label: 'Channel bed level', unit: 'mAOD', step: 0.001 },
     { path: 'crossing.NWL', label: 'Normal water level (NWL)', unit: 'mAOD', step: 0.001 },
-    { path: 'crossing.DFL', label: 'Design flood level (DFL)', unit: 'mAOD', step: 0.001 },
+    { path: 'crossing.DFL', label: 'Design flood level (DFL)', unit: 'mAOD', step: 0.001, nullable: true, help: 'Required for a watercourse crossing — the sheet is not valid without it (X3).' },
     { path: 'crossing.DFLlabel', label: 'DFL label', type: 'text' },
     { path: 'crossing.DFLsource', label: 'DFL source', type: 'text' },
     { path: 'crossing.EFL', label: 'Extreme flood level (optional)', unit: 'mAOD', step: 0.001, nullable: true },
@@ -380,8 +414,10 @@ export const FIELDS = {
     { path: 'frontGroundOverride', label: 'Front ground level override', unit: 'mAOD', step: 0.001, nullable: true, help: 'Blank = long section level at the front face.' },
     { path: 'minFrontFill', label: 'Minimum retained front fill level', unit: 'mAOD', step: 0.001, nullable: true, help: 'Required only if passive or embedment is relied upon.' },
     { path: 'excavAllowance', label: 'Unplanned excavation Δa', unit: 'm', min: 0, step: 0.05, nullable: true, help: 'Blank = 10% of retained height ≤ 0.5 m (by analogy with BS EN 1997-1 9.3.2.2).' },
-    { path: 'formationMuOverride', label: 'Formation interface tan δk override', min: 0, max: 1, step: 0.01, nullable: true, help: 'Blank = BS EN 1997-1 6.5.3 rules. Factored by γφ′ in M2.' },
-    { path: 'settlementLimit', label: 'Total settlement limit', unit: 'mm', min: 1, step: 1, help: 'Default 25 mm — replace with bridge supplier limits.' },
+    { path: 'formationMuOverride', label: 'Formation interface tan δk override', min: 0, max: 1, step: 0.01, nullable: true, override: true, help: 'Blank = BS EN 1997-1 6.5.3 rules. Factored by γφ′ in M2. Must be > 0 and justified; undrained sliding is always checked as well.' },
+    { path: 'formationMuJust', label: 'Justification for the tan δk override (required)', type: 'text', showIf: (s, e) => e.formationMuOverride !== null && e.formationMuOverride !== undefined && e.formationMuOverride !== '' },
+    { path: 'settlementLimit', label: 'Total settlement limit', unit: 'mm', min: 1, step: 1, override: 25, help: 'Default 25 mm — replace with the bridge supplier’s limits. A different value needs a justification.' },
+    { path: 'settlementLimitJust', label: 'Justification for the settlement limit (required)', type: 'text', showIf: (s, e) => Number(e.settlementLimit) !== 25 },
   ],
   fill: [
     { path: 'fill.gamma', label: 'Backfill γ (bulk)', unit: 'kN/m³', min: 10, step: 0.1 },

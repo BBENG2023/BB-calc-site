@@ -6,6 +6,11 @@ import { createTabs } from '../../js/tabs.js';
 import { createTable } from '../../js/table-input.js';
 import { saveJSON, loadJSON, saveCSV, saveSVG } from '../../js/file-io.js';
 import { escapeHtml, fmt } from '../../js/formatters.js';
+import { LOAD_STANDARDS, LOAD_UNITS } from './schema.js';
+import { bothEndsFixed, endBearings } from './actions.js';
+import { DISPERSION_MODES } from './dispersion.js';
+import { blankState, newEnd } from './schema.js';
+import { saveHeaderDetails } from '../../js/header-details.js';
 import { FIELDS, getPath, setPath, clone, migrate, inputHash, REACTION_GROUPS, STRATUM_CLASSES, GRANULAR_TYPES, SIMPLE_SOILS, newSimpleBorehole, newCourse, newReaction, ALL_BLOCK_TYPES } from './schema.js';
 import { expandSimpleBorehole } from './ground.js';
 import { BRIDGE_RANGES, libraryDesign } from '../../js/bridge-library.js';
@@ -13,8 +18,8 @@ import { PRESETS, bbStandard } from './presets.js';
 import { FACTOR_PRESETS, FILL_MATERIALS } from '../../js/shared-data.js';
 import { evaluate } from './engine.js';
 import { SLOPE_CASES, runSlopeCase, slopeExport } from './slope.js';
-import { autoSizeSteps } from './optimise.js';
-import { allDrawings } from './drawings.js';
+import { autoSizeSteps, familyCourses } from './optimise.js';
+import { allDrawings, diagramD2, drawingD3b } from './drawings.js';
 import { detectBank } from './crossing.js';
 import { defaultClauses, defaultDRA } from './spec.js';
 import { defaultL_mm } from './layout.js';
@@ -47,6 +52,73 @@ function h(tag, cls, html) {
   if (html !== undefined) n.innerHTML = html;
   return n;
 }
+
+// --- Change indicators ---------------------------------------------------------------
+// Utilisations from the previous and the current run, so each bar can show
+// "0.87 → 1.32 ▲" after a change. Rolled once per new set of inputs.
+let utilPrev = {}, utilCur = {}, utilHash = null;
+function rollUtil(D) {
+  if (D.hash === utilHash) return;
+  utilHash = D.hash;
+  utilPrev = utilCur;
+  utilCur = { max: D.maxUtil };
+  D.ends.forEach((x) => x.util.forEach((u) => { utilCur[`${x.endIdx}-${u.id}`] = u.util; }));
+}
+function deltaTxt(key, cur) {
+  const p = utilPrev[key];
+  if (p === undefined || !Number.isFinite(p) || !Number.isFinite(cur) || Math.abs(p - cur) < 0.0005) return null;
+  return { text: `${fmt(p, 2)} → ${fmt(cur, 2)} ${cur > p ? '▲' : '▼'}`, up: cur > p };
+}
+
+// --- Defaults, clause references and the per-step registry -----------------------------
+
+let rendered = null; // fields rendered on the current step (for "Reset this step")
+let DEFAULTS = null;
+function defaultsRoot() {
+  if (!DEFAULTS) { DEFAULTS = blankState(); DEFAULTS.ends = [newEnd(1), newEnd(2)]; }
+  return DEFAULTS;
+}
+// Path from the state to a nested input object (e.g. ends.0.arrangement.dispersion).
+function locate(obj, target, prefix = '', depth = 0) {
+  if (obj === target) return prefix;
+  if (!obj || typeof obj !== 'object' || depth > 4) return null;
+  for (const k of Object.keys(obj)) {
+    if (k === 'cache' || k === 'boreholes' || k === 'reactions' || k === 'profile') continue;
+    const v = obj[k];
+    if (v && typeof v === 'object') {
+      const r = locate(v, target, prefix ? `${prefix}.${k}` : k, depth + 1);
+      if (r !== null) return r;
+    }
+  }
+  return null;
+}
+function defaultFor(state, target, path) {
+  const base = locate(state, target);
+  if (base === null) return undefined;
+  const full = base ? `${base}.${path}` : path;
+  return getPath(defaultsRoot(), full);
+}
+
+// Clause and source for the ⓘ tooltip (one line each).
+const CLAUSES = {
+  'loads.surcharge': 'BS 8002:2015 / PD 6694-1 — 10 kPa pedestrian, 20 kPa vehicular approach surcharge.',
+  'loads.surchargeSetback': 'Surcharge starts this far behind the ballast wall.',
+  'fill.phi': 'BS EN 1997-1 2.4.5.2 — characteristic φ′ of the backfill; justify values above 40°.',
+  'fill.gamma': 'BS EN 1997-1 2.4.5.2 — characteristic bulk unit weight of the backfill.',
+  'project.slidingMu': 'BS EN 1337-2 Table 11 (PTFE) or supplier value — free-bearing friction μ.',
+  'project.freeboardRequired': 'Regulator requirement (e.g. EA 600 mm) — soffit above DFL.',
+  'project.designLife': 'BS EN 1990 Table 2.1 — design working life.',
+  'settlementLimit': 'BS EN 1997-1 2.4.8 and Annex H — total settlement limit at this end.',
+  'basis.settlementDiffLimit': 'BS EN 1997-1 Annex H — differential settlement between the abutments.',
+  'basis.tiltLimit': 'BS EN 1997-1 Annex H — rotation of the base (1 in …).',
+  'basis.transDiffLimit': 'Bridge supplier — differential settlement between bearings at one end.',
+  'formationMuOverride': 'BS EN 1997-1 6.5.3(10) — interface friction; override needs a justification.',
+  'arrangement.pad.thk': 'Type 1 pad 150–500 mm; spread through it at basis.spread V:1H.',
+  'arrangement.L_mm': 'Transverse length of the abutment along the face.',
+  'crossing.DFL': 'Flood study / regulator — design flood level with climate change allowance.',
+  'gwUser': 'BS EN 1997-1 2.4.6.1 — design groundwater level (highest credible).',
+  'arrangement.dispersion.angleRatio': 'Load spread per course, capped by the bond overlap.',
+};
 
 // --- Generic field ----------------------------------------------------------------
 
@@ -94,10 +166,119 @@ function field(def, target, state, end, onChange) {
     });
   }
   input.id = id;
+  // Overridable fields: red outline and a justification marker when the value
+  // departs from the default; re-render on change so the justification box shows.
+  if (def.override !== undefined) {
+    const isOv = def.override === true ? val !== null && val !== undefined && val !== '' : val !== null && val !== undefined && val !== '' && Number(val) !== def.override;
+    if (isOv) {
+      wrap.classList.add('lg-overridden');
+      label.innerHTML += ' <span class="lg-ov-flag" title="Override — needs a justification">⚑ override</span>';
+    }
+    input.addEventListener('change', () => onChange(true));
+  }
+  // ⓘ tooltip (clause + one-line explanation) and ↺ reset to default.
+  const tip = CLAUSES[def.path] || def.help;
+  if (tip) {
+    const info = h('button', 'lg-info', 'ⓘ');
+    info.type = 'button';
+    info.setAttribute('aria-label', `About ${def.label}: ${tip}`);
+    info.dataset.tip = tip;
+    label.append(' ', info);
+  }
+  const dflt = def.type === 'text' || def.type === 'textarea' ? undefined : defaultFor(state, target, def.path);
+  const hasDefault = dflt !== undefined;
+  if (rendered) rendered.push({ target, path: def.path, def: dflt, hasDefault });
+  if (hasDefault && JSON.stringify(val ?? null) !== JSON.stringify(dflt ?? null)) {
+    const rs = h('button', 'lg-reset', '↺');
+    rs.type = 'button';
+    rs.title = `Reset to default (${dflt === null ? 'blank' : dflt})`;
+    rs.setAttribute('aria-label', `Reset ${def.label} to default`);
+    rs.addEventListener('click', () => { setPath(target, def.path, clone(dflt)); onChange(true); });
+    label.append(' ', rs);
+  }
+  const sl = def.type === undefined || def.type === 'number' ? (def.slider || SLIDERS[def.path]) : null;
+  if (sl) {
+    wrap.classList.add('field-slider');
+    wrap.append(label, sliderPair(input, sl, (n) => { setPath(target, def.path, n); onChange(false); }, typeof dflt === 'number' ? dflt : null));
+    if (def.help) { wrap.append(h('div', 'field-help', e(def.help))); input.title = def.help; }
+    return wrap;
+  }
   if (def.type === 'checkbox') { wrap.append(input, label); } else { wrap.append(label, input); }
   if (def.help) { wrap.append(h('div', 'field-help', e(def.help))); input.title = def.help; }
   return wrap;
 }
+
+// Range slider kept in step with a number box. `sl` = [min, max, step].
+// The number box still accepts values outside the slider range.
+function sliderPair(numInput, [min, max, step], set, dflt = null) {
+  const box = h('div', 'lg-slider');
+  const col = h('div', 'lg-slider-col');
+  const r = document.createElement('input');
+  r.type = 'range';
+  r.min = min; r.max = max; r.step = step;
+  r.value = numInput.value === '' ? min : numInput.value;
+  r.setAttribute('aria-label', 'Adjust with slider');
+  // Default marker (tick) and the range limits under the track.
+  if (dflt !== null && dflt >= min && dflt <= max) {
+    const dl = document.createElement('datalist');
+    dl.id = `lg-dl-${Math.random().toString(36).slice(2, 9)}`;
+    const o = document.createElement('option'); o.value = dflt; dl.append(o);
+    r.setAttribute('list', dl.id);
+    col.append(dl);
+  }
+  r.addEventListener('input', () => { numInput.value = r.value; set(Number(r.value)); });
+  numInput.addEventListener('input', () => { if (numInput.value !== '') r.value = numInput.value; });
+  const lim = h('div', 'lg-slider-lim', `<span>${min}</span>${dflt !== null && dflt >= min && dflt <= max ? `<span class="lg-slider-def">default ${dflt}</span>` : ''}<span>${max}</span>`);
+  col.prepend(r);
+  col.append(lim);
+  box.append(col, numInput);
+  return box;
+}
+
+// Sliders for fields with a natural working range (number box still free).
+const SLIDERS = {
+  'project.designLife': [1, 120, 1],
+  'project.freeboardRequired': [0, 1.5, 0.05],
+  'project.dMin': [0, 1.5, 0.05],
+  'project.skew': [0, 45, 0.5],
+  'project.slidingMu': [0, 0.5, 0.01],
+  'loads.surcharge': [0, 30, 0.5],
+  'loads.surchargePsi0': [0, 1, 0.05],
+  'loads.surchargeSetback': [0, 5, 0.1],
+  'loads.waterHead': [0, 3, 0.05],
+  'loads.hydraulic.vm': [0, 5, 0.1],
+  'loads.plant.pressure': [0, 200, 5],
+  'loads.plant.offset': [0, 10, 0.1],
+  'crossing.regulatoryBuffer': [0, 20, 0.5],
+  'crossing.scourMargin': [0, 1.5, 0.05],
+  'crossing.minSetback': [0, 5, 0.1],
+  'crossing.thetaInf': [10, 60, 0.5],
+  'scour.ds': [0, 3, 0.05],
+  'settlementLimit': [5, 100, 1],
+  'fill.gamma': [16, 23, 0.1],
+  'fill.gammaSat': [17, 24, 0.1],
+  'fill.phi': [25, 45, 0.5],
+  'arrangement.L_mm': [1600, 12000, 400],
+  'arrangement.Bmax_mm': [1600, 9600, 400],
+  'arrangement.shelf_mm': [1200, 3200, 400],
+  'arrangement.maxSetback': [0, 5, 0.25],
+  'arrangement.pad.thk': [0, 500, 25],
+  'arrangement.pad.overhangFront': [0, 1000, 50],
+  'arrangement.pad.overhangRear': [0, 1000, 50],
+  'arrangement.kpMob': [0, 1, 0.05],
+  'arrangement.groutBed': [0, 100, 5],
+  'arrangement.bearingGrout': [0, 50, 1],
+  'basis.muBlock': [0.3, 0.8, 0.01],
+  'basis.muConcrete': [0.3, 0.8, 0.01],
+  'basis.spread': [1, 4, 0.5],
+  'basis.baseInclination': [0, 5, 0.1],
+  'basis.coulombDeltaRatio': [0, 0.667, 0.01],
+  'basis.backfillSlope': [0, 30, 0.5],
+  'basis.settlementDiffLimit': [5, 50, 1],
+  'basis.tiltLimit': [100, 1000, 50],
+  'basis.transDiffLimit': [2, 30, 1],
+  'basis.nibEta': [0, 1, 0.05],
+};
 
 function fieldset(title, defs, target, state, end, onChange, cls = '') {
   const fs = h('fieldset', `lg-fieldset ${cls}`);
@@ -116,7 +297,10 @@ const omit = (defs, paths) => defs.filter((d) => !paths.includes(d.path));
 export function customUI(container, state, api) {
   container.innerHTML = '';
   container.classList.add('lg-ui');
+  state.ui = state.ui || {};
+  const quick = state.ui.view !== 'full';
   let tabs;
+  const live = {}; // per-panel refresh hooks, called after each recalculation
   const onChange = (structural) => {
     autosave(state);
     if (structural === 'rebuild') { api.rebuild(); api.recalcNow(); return; }
@@ -126,36 +310,34 @@ export function customUI(container, state, api) {
   const activeEnd = () => (bridgeMode(state) ? state.ui.activeEnd || 0 : 0);
   const E = () => state.ends[activeEnd()];
 
-  // Toolbar.
+  // Toolbar: view switch, end switch, live status, file menu.
   const tb = h('div', 'lg-toolbar');
-  const presetSel = document.createElement('select');
-  presetSel.setAttribute('aria-label', 'Preset');
-  PRESETS.forEach((p) => { const o = document.createElement('option'); o.value = p.key; o.textContent = p.label; presetSel.append(o); });
-  const loadPreset = h('button', 'btn secondary btn-sm', 'Load preset');
-  loadPreset.type = 'button';
-  loadPreset.addEventListener('click', () => {
-    if (!window.confirm('Replace the current design with this preset? Unsaved changes will be lost.')) return;
-    const p = PRESETS.find((x) => x.key === presetSel.value);
-    api.replaceState(p.build());
+  const view = h('div', 'lg-seg lg-view');
+  view.setAttribute('role', 'group');
+  view.setAttribute('aria-label', 'View');
+  [['quick', 'Quick design'], ['full', 'Full detail']].forEach(([k, l]) => {
+    const on = (k === 'quick') === quick;
+    const b = h('button', `lg-seg-btn${on ? ' on' : ''}`, l);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.title = k === 'quick' ? 'Seven guided steps with sliders — the usual inputs only' : 'Every input, in eight tabs';
+    b.addEventListener('click', () => {
+      if (on) return;
+      state.ui.view = k;
+      state.ui.activeTab = k === 'quick' ? 'q-project' : 'project';
+      autosave(state);
+      api.rebuild();
+      api.recalcNow();
+    });
+    view.append(b);
   });
-  const save = h('button', 'btn btn-sm', 'Save design file (.json)');
-  save.type = 'button';
-  save.addEventListener('click', () => {
-    const name = (api.headerDetails?.projectNo || 'legato-abutment').replace(/[^\w-]+/g, '_');
-    saveJSON(`${name}-design.json`, state);
-  });
-  const load = h('button', 'btn secondary btn-sm', 'Load design file');
-  load.type = 'button';
-  load.addEventListener('click', async () => {
-    try { api.replaceState(await loadJSON({ migrate })); api.toast('Design file loaded'); } catch (err) { if (err.message !== 'No file chosen') window.alert(err.message); }
-  });
-  tb.append(h('span', 'lg-toolbar-label', 'Preset'), presetSel, loadPreset, save, load);
+  tb.append(view);
   if (bridgeMode(state)) {
     const seg = h('div', 'lg-seg');
     seg.setAttribute('role', 'group');
     seg.setAttribute('aria-label', 'Active end');
     [0, 1].forEach((i) => {
-      const b = h('button', `lg-seg-btn${activeEnd() === i ? ' on' : ''}`, `End ${i + 1}`);
+      const b = h('button', `lg-seg-btn${activeEnd() === i ? ' on' : ''}`, e(state.ends[i].label || `End ${i + 1}`));
       b.type = 'button';
       b.setAttribute('aria-pressed', activeEnd() === i ? 'true' : 'false');
       b.addEventListener('click', () => { state.ui.activeEnd = i; [...seg.children].forEach((c, j) => { c.classList.toggle('on', j === i); c.setAttribute('aria-pressed', j === i ? 'true' : 'false'); }); tabs.rerender(); api.recalcNow(); });
@@ -163,25 +345,441 @@ export function customUI(container, state, api) {
     });
     tb.append(h('span', 'lg-toolbar-label', 'Editing'), seg);
   }
-  const jump = h('button', 'btn secondary btn-sm lg-jump', 'Results ↓');
-  jump.type = 'button';
-  jump.addEventListener('click', () => document.querySelector('.results-panel')?.scrollIntoView({ behavior: 'smooth' }));
-  tb.append(jump);
+  const chip = h('button', 'lg-live', 'Calculating…');
+  chip.type = 'button';
+  chip.title = 'Go to the results';
+  chip.addEventListener('click', () => document.querySelector('.results-panel')?.scrollIntoView({ behavior: 'smooth' }));
+  tb.append(chip);
+
+  const menu = h('details', 'lg-menu');
+  menu.append(h('summary', null, 'File ▾'));
+  const mbox = h('div', 'lg-menu-box');
+  const presetSel = document.createElement('select');
+  presetSel.setAttribute('aria-label', 'Preset');
+  PRESETS.forEach((pr) => { const o = document.createElement('option'); o.value = pr.key; o.textContent = pr.label; presetSel.append(o); });
+  const loadPreset = h('button', 'btn secondary btn-sm', 'Start from preset');
+  loadPreset.type = 'button';
+  loadPreset.addEventListener('click', () => {
+    if (!window.confirm('Replace the current design with this preset? Unsaved changes will be lost.')) return;
+    const pr = PRESETS.find((x) => x.key === presetSel.value);
+    const next = pr.build();
+    next.ui = { ...(next.ui || {}), view: state.ui.view, activeTab: state.ui.activeTab };
+    api.replaceState(next);
+  });
+  const save = h('button', 'btn btn-sm', 'Save design file (.json)');
+  save.type = 'button';
+  save.addEventListener('click', () => {
+    const name = (api.headerDetails?.projectNo || 'legato-abutment').replace(/[^\w-]+/g, '_');
+    saveJSON(`${name}-design.json`, state);
+  });
+  const load = h('button', 'btn secondary btn-sm', 'Open design file');
+  load.type = 'button';
+  load.addEventListener('click', async () => {
+    try { api.replaceState(await loadJSON({ migrate })); api.toast('Design file loaded'); } catch (err) { if (err.message !== 'No file chosen') window.alert(err.message); }
+  });
+  mbox.append(h('span', 'lg-toolbar-label', 'Preset'), presetSel, loadPreset, save, load,
+    h('p', 'field-help', 'Auto-saved in this browser only. Save a design file to keep or share it.'));
+  menu.append(mbox);
+  tb.append(menu);
   container.append(tb);
-  container.append(h('p', 'field-help lg-autosave-note', 'Design state is auto-saved in this browser only. Use “Save design file” to keep or share it — the design is too large for a link.'));
 
   const T = [];
-  T.push({ key: 'project', label: '1 Project & bridge', render: (p) => renderProject(p, state, onChange) });
-  T.push({ key: 'loads', label: '2 Loads', render: (p) => renderLoads(p, state, onChange, api) });
-  T.push({ key: 'crossing', label: bridgeMode(state) ? '3 Crossing & levels' : '3 Levels', render: (p) => renderCrossing(p, state, E(), activeEnd(), onChange, api) });
-  T.push({ key: 'ground', label: '4 Ground', render: (p) => renderGround(p, state, E(), activeEnd(), onChange, api) });
-  T.push({ key: 'arrangement', label: '5 Arrangement', render: (p) => renderArrangement(p, state, E(), activeEnd(), onChange, api) });
-  T.push({ key: 'basis', label: '6 Design basis', render: (p) => renderBasis(p, state, E(), onChange) });
-  T.push({ key: 'spec', label: '7 Spec & DRA', render: (p) => renderSpec(p, state, onChange, api) });
-  T.push({ key: 'drawings', label: '8 Drawings & exports', render: (p) => renderDrawings(p, state, api) });
-  tabs = createTabs(T, { active: state.ui.activeTab, onSwitch: (k) => { state.ui.activeTab = k; } });
+  if (quick) {
+    T.push({ key: 'q-project', label: '1 Project', need: 'You need: the project number and title, and who is designing it.', render: (p) => renderQuickProject(p, state, onChange, api) });
+    T.push({ key: 'q-bridge', label: '2 Bridge & bearings', need: bridgeMode(state) ? 'You need: the bridge type and span, and the bearing layout and fixity from the supplier’s GA.' : 'Retaining-wall mode — no bridge.', render: (p) => renderQuickBridge(p, state, onChange, api) });
+    T.push({ key: 'q-loads', label: '3 Loads', need: 'You need: the supplier’s reaction schedule (check its units), the load model and the approach surcharge.', render: (p) => renderQuickLoads(p, state, onChange, api) });
+    T.push({ key: 'q-ground', label: '4 Ground', need: 'You need: seat and road levels, ground and water levels (GA, topographic survey, flood study) and the borehole logs.', render: (p) => renderQuickGround(p, state, E(), activeEnd(), onChange, api, live) });
+    T.push({ key: 'q-size', label: '5 Arrangement', need: 'Press Auto-size, or drag the sliders. The section, the load path and the checks update as you go.', render: (p) => renderQuickSize(p, state, E(), activeEnd(), onChange, api, live) });
+    T.push({ key: 'q-limits', label: '6 Limits & overrides', need: 'Use the bridge supplier’s settlement limits. Any override needs a written justification.', render: (p) => renderQuickLimits(p, state, onChange, api, live) });
+    T.push({ key: 'q-results', label: '7 Results', need: 'Clear everything in the list, run global stability, then print the report.', render: (p) => renderQuickResults(p, state, api, live) });
+  } else {
+    T.push({ key: 'project', label: '1 Project & bridge', render: (p) => renderProject(p, state, onChange) });
+    T.push({ key: 'loads', label: '2 Loads', render: (p) => renderLoads(p, state, onChange, api) });
+    T.push({ key: 'crossing', label: bridgeMode(state) ? '3 Crossing & levels' : '3 Levels', render: (p) => renderCrossing(p, state, E(), activeEnd(), onChange, api) });
+    T.push({ key: 'ground', label: '4 Ground', render: (p) => renderGround(p, state, E(), activeEnd(), onChange, api) });
+    T.push({ key: 'arrangement', label: '5 Arrangement', render: (p) => renderArrangement(p, state, E(), activeEnd(), onChange, api) });
+    T.push({ key: 'basis', label: '6 Design basis', render: (p) => renderBasis(p, state, E(), onChange) });
+    T.push({ key: 'spec', label: '7 Spec & DRA', render: (p) => renderSpec(p, state, onChange, api) });
+    T.push({ key: 'drawings', label: '8 Drawings & exports', render: (p) => renderDrawings(p, state, api) });
+  }
+  // Every panel: a "you need" line at the top, Back / Next at the bottom.
+  const go = (k) => { tabs.show(k); tabs.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  const wrapped = T.map((t, i) => ({
+    ...t,
+    render: (p) => {
+      Object.keys(live).forEach((k) => delete live[k]);
+      if (t.need) p.append(h('p', 'lg-need', e(t.need)));
+      rendered = [];
+      t.render(p);
+      const mine = rendered;
+      rendered = null;
+      const nav = h('div', 'lg-stepnav');
+      const resettable = mine.filter((r) => r.hasDefault);
+      if (resettable.length) {
+        const rs = h('button', 'btn secondary btn-xs lg-step-reset', '↺ Reset this step');
+        rs.type = 'button';
+        rs.title = 'Set every input on this step back to its default';
+        rs.addEventListener('click', () => {
+          if (!window.confirm(`Reset the ${resettable.length} inputs on this step to their defaults?`)) return;
+          resettable.forEach((r) => setPath(r.target, r.path, clone(r.def)));
+          onChange(true);
+        });
+        p.append(rs);
+      }
+      if (i > 0) { const b = h('button', 'btn secondary btn-sm', `← ${e(T[i - 1].label)}`); b.type = 'button'; b.addEventListener('click', () => go(T[i - 1].key)); nav.append(b); }
+      nav.append(h('span', 'lg-stepnav-pos', `Step ${i + 1} of ${T.length}`));
+      if (i < T.length - 1) { const b = h('button', 'btn btn-sm', `${e(T[i + 1].label)} →`); b.type = 'button'; b.addEventListener('click', () => go(T[i + 1].key)); nav.append(b); }
+      p.append(nav);
+    },
+  }));
+  tabs = createTabs(wrapped, { active: state.ui.activeTab, onSwitch: (k) => { state.ui.activeTab = k; } });
   container.append(tabs);
-  api.onRecalc?.(() => { if (tabs.current() === 'drawings') tabs.rerender(); });
+
+  const strip = h('div', 'lg-strip');
+  strip.setAttribute('role', 'status');
+  strip.setAttribute('aria-live', 'polite');
+  container.append(strip);
+  const refresh = (out) => {
+    const D = out?.design;
+    if (D) {
+      const w = D.ends.flatMap((x) => x.util.filter((u) => !u.info).map((u) => ({ ...u, end: x.label, key: `${x.endIdx}-${u.id}` }))).sort((a, b) => b.util - a.util)[0];
+      const dm = deltaTxt('max', D.maxUtil);
+      const vs = D.blocked.length ? 'blocked' : out.verdict?.pass ? 'pass' : 'fail';
+      strip.className = `lg-strip ${vs}`;
+      strip.innerHTML = `<span class="lg-strip-v">${vs === 'pass' ? '✓ PASS' : vs === 'blocked' ? '⛔ NOT VALID' : '✗ FAIL'}</span><span class="lg-strip-u">${fmt(D.maxUtil, 2)}${dm ? ` <span class="lg-delta ${dm.up ? 'up' : 'down'}">${e(dm.text)}</span>` : ''}</span>${w ? `<span class="lg-strip-g">${e(w.id)} ${e(w.title)}${D.bridge ? ` · ${e(w.end)}` : ''}${w.zone ? ` · ${e(w.zone.split(',')[0])}` : ''}</span>` : ''}${D.blocked.length ? `<span class="lg-strip-b">${D.blocked.length} to resolve</span>` : ''}`;
+      const worst = D.ends.flatMap((x) => x.util.filter((u) => !u.info).map((u) => ({ ...u, end: x.label }))).sort((a, b) => b.util - a.util)[0];
+      chip.className = `lg-live ${D.blocked.length ? 'fail' : out.verdict?.pass ? 'pass' : 'fail'}`;
+      chip.innerHTML = `<strong>${out.verdict?.pass ? 'PASS' : 'FAIL'}</strong> ${fmt(D.maxUtil, 2)}${worst ? ` <span>${e(worst.id)} ${e(worst.title)}${D.bridge ? ` · ${e(worst.end)}` : ''}</span>` : ''}`;
+      const st = stepStatus(state, D, quick);
+      tabs.querySelectorAll('.tab-btn').forEach((b) => {
+        const k = st[b.dataset.key];
+        b.classList.toggle('st-ok', k === 'ok');
+        b.classList.toggle('st-warn', k === 'warn');
+        b.title = k === 'ok' ? 'Looks complete' : k === 'warn' ? 'Needs attention' : '';
+      });
+    }
+    Object.values(live).forEach((fn) => fn(out));
+    if (tabs.current() === 'drawings') tabs.rerender();
+  };
+  api.onRecalc?.(refresh);
+  if (api.getOutput()?.design) refresh(api.getOutput());
+}
+
+// Tick or warning per step, from the latest results.
+function stepStatus(state, D, quick) {
+  const lib = state.loads.library;
+  const libOk = !bridgeMode(state) || (lib?.range && lib.range !== 'bespoke' ? !!lib.row : state.loads.reactions.length > 0);
+  const modelsOk = !D.blocked.some((b) => /Load model|thermal restraint|reactions/i.test(b));
+  const levelsOk = D.ends.every((x) => x.levels?.status !== 'fail') && !D.blocked.some((b) => /DFL|seat level|X5/.test(b));
+  const groundOk = D.ends.every((x) => state.ends[x.endIdx].groundMode === 'manual' || state.boreholes.some((b) => b.end === `End ${x.endIdx + 1}` || b.end === 'Both'));
+  const sizeOk = D.ends.every((x) => x.util.filter((u) => !u.info && !/^E6/.test(u.id)).every((u) => u.util <= 1)) && !D.blocked.some((b) => /auto-size/.test(b));
+  const limitsOk = D.ends.every((x) => x.util.filter((u) => /^E6/.test(u.id)).every((u) => u.util <= 1)) && !(D.overrides || []).some((o) => o.status !== 'applied');
+  const allOk = D.pass;
+  const s = (ok) => (ok ? 'ok' : 'warn');
+  return quick
+    ? { 'q-project': s(true), 'q-bridge': s(libOk && !D.blocked.some((b) => /thermal restraint/.test(b))), 'q-loads': s(libOk && modelsOk), 'q-ground': s(groundOk && levelsOk), 'q-size': s(sizeOk), 'q-limits': s(limitsOk), 'q-results': s(allOk) }
+    : { project: s(libOk), loads: s(libOk && modelsOk), crossing: s(levelsOk), ground: s(groundOk), arrangement: s(sizeOk) };
+}
+
+// --- Quick design steps -----------------------------------------------------------------
+
+// Step 1 — project details (the sheet header) and design status.
+function renderQuickProject(p, state, onChange, api) {
+  const hd = api.headerDetails || {};
+  const fs = h('fieldset', 'lg-fieldset');
+  fs.append(h('legend', null, 'Project details (printed in the sheet header)'));
+  const grid = h('div', 'lg-grid');
+  [['projectNo', 'Project number'], ['projectTitle', 'Project title'], ['engineerInitials', 'Engineer (initials)'], ['checkedCategory', 'Design check category'], ['date', 'Date']].forEach(([k, l]) => {
+    const w = h('div', 'field');
+    const id = `lg-hd-${k}`;
+    const lab = h('label', null, e(l));
+    lab.htmlFor = id;
+    const i = document.createElement('input');
+    i.type = 'text'; i.id = id; i.value = hd[k] || '';
+    if (k === 'date') i.placeholder = 'blank = today';
+    if (!i.value && k !== 'date') w.classList.add('lg-missing');
+    i.addEventListener('input', () => { hd[k] = i.value; saveHeaderDetails(hd); w.classList.toggle('lg-missing', !i.value && k !== 'date'); api.scheduleRecalc(); });
+    w.append(lab, i);
+    grid.append(w);
+  });
+  fs.append(grid, h('p', 'field-help', 'Blank project fields print as “PROJECT DETAILS MISSING”. Saved in this browser and shared with the other calcs.'));
+  p.append(fs);
+  p.append(fieldset('Design', FIELDS.project.filter((d) => ['project.mode', 'project.status', 'project.designLife'].includes(d.path)), state, state, null, onChange));
+}
+
+// Step 2 — bridge, geometry and bearings.
+function renderQuickBridge(p, state, onChange, api) {
+  if (!bridgeMode(state)) { p.append(h('p', 'field-help', 'Retaining-wall mode: no bridge. Go to Loads.')); return; }
+  p.append(renderBridgeLibrary(state, onChange, api));
+  const det = h('details', 'lg-more');
+  det.open = !usingLibrary(state);
+  det.append(h('summary', null, usingLibrary(state) ? 'Bridge geometry — set from the standard bridge (open to adjust)' : 'Bridge geometry'));
+  det.append(fieldset('Bridge geometry', pick(FIELDS.project, ['project.span', 'project.deckWidth', 'project.bearingsPerEnd', 'project.bearingCentres', 'project.bearingPlateL', 'project.bearingPlateB', 'project.bearingHeight', 'project.skew']), state, state, null, onChange));
+  p.append(det);
+  p.append(fieldset('Fixity', pick(FIELDS.project, ['project.fixedEnd', 'project.slidingMu']), state, state, null, onChange));
+  renderBearings(p, state, onChange);
+  if (bothEndsFixed(state)) p.append(renderThermalRestraint(state, onChange));
+}
+
+// Step 3 — loads (schedule, units, models, approach surcharge).
+function renderQuickLoads(p, state, onChange, api) {
+  renderLoads(p, state, onChange, api, true, true);
+  const qb = h('div', 'lg-quickset');
+  qb.append(h('span', 'lg-toolbar-label', 'Surcharge'));
+  [[10, 'Pedestrian 10 kPa'], [20, 'Vehicular 20 kPa']].forEach(([q, l]) => {
+    const b = h('button', `btn ${state.loads.surcharge === q ? '' : 'secondary '}btn-xs`, l);
+    b.type = 'button';
+    b.addEventListener('click', () => { state.loads.surcharge = q; onChange(true); });
+    qb.append(b);
+  });
+  p.append(qb);
+}
+
+// Step 4 — levels, water and boreholes for the active end.
+function renderQuickGround(p, state, end, idx, onChange, api, live) {
+  const label = bridgeMode(state) ? end.label : 'Wall';
+  const seat = Number(end.seatLevel) || 100;
+  const lvl = (lo, hi) => [Math.floor((seat + lo) * 2) / 2, Math.ceil((seat + hi) * 2) / 2, 0.05];
+  const main = [
+    { path: 'seatLevel', label: bridgeMode(state) ? 'Bearing seat level (top of seat course)' : 'Top of wall level', unit: 'mAOD', step: 0.01 },
+    { path: 'FRL', label: 'Approach road level (FRL)', unit: 'mAOD', step: 0.01, bridgeOnly: true },
+    { path: 'frontGroundOverride', label: 'Ground level at the front face', unit: 'mAOD', step: 0.01, nullable: true, slider: lvl(-6, 0.5), help: bridgeMode(state) ? 'Blank = read from the long section (Full detail → Crossing & levels).' : 'Blank = from the ground profile.' },
+    { path: 'gwUser', label: 'Design groundwater level', unit: 'mAOD', step: 0.01, nullable: true, slider: lvl(-10, 0), help: 'Blank = from the borehole water readings. Design level = highest of the readings and this value.' },
+  ];
+  p.append(fieldset(`${label} — levels`, main, end, state, end, onChange));
+  if (bridgeMode(state)) {
+    const X = state.crossing;
+    const bed = Number(X.bedLevel) || seat - 4;
+    const wl = [Math.floor((bed - 0.5) * 2) / 2, Math.ceil((seat + 0.5) * 2) / 2, 0.05];
+    p.append(fieldset('Watercourse', [
+      ...pick(FIELDS.crossing, ['crossing.watercourse', 'crossing.bedLevel', 'crossing.NWL']),
+      { ...FIELDS.crossing.find((d) => d.path === 'crossing.DFL'), slider: wl },
+      ...pick(FIELDS.crossing, ['crossing.DFLsource']),
+      ...pick(FIELDS.project, ['project.freeboardRequired']),
+    ], state, state, end, onChange));
+    const bank = pick(FIELDS.end, ['bankCrest.ch', 'bankCrest.level', 'bankToe.ch', 'bankToe.level']);
+    const fsB = fieldset(`${label} — river bank`, bank, end, state, end, onChange);
+    const det = h('button', 'btn secondary btn-sm', 'Find crest and toe from the long section');
+    det.type = 'button';
+    det.addEventListener('click', () => {
+      const b = detectBank(state, idx);
+      if (b) { end.bankCrest = { ...b.crest }; end.bankToe = { ...b.toe }; onChange(true); api.toast('Bank crest and toe found — check them'); }
+    });
+    fsB.append(det);
+    p.append(fsB);
+  }
+  const ro = h('p', 'lg-readout', 'Calculating…');
+  p.append(ro);
+  live.site = (o) => {
+    const x = o?.design?.ends?.find((q) => q.endIdx === idx);
+    if (x) ro.textContent = `${label}: formation ${fmt(x.levels.formation, 2)} mAOD · pad ${Math.round(x.levels.padThk * 1000)} mm · ${x.layout.n} courses · founding on ${x.geom.founding.desc || x.geom.founding.cls}`;
+  };
+  if (api.getOutput()?.design) live.site(api.getOutput());
+  p.append(h('h3', 'lg-h3', 'Boreholes'));
+  renderGround(p, state, end, idx, onChange, api);
+}
+
+// Step 6 — limits, overrides and what blocks the sheet.
+function renderQuickLimits(p, state, onChange, api, live) {
+  const ends = bridgeMode(state) ? [0, 1] : [0];
+  const row = h('div', 'lg-cols');
+  ends.forEach((i) => {
+    const end = state.ends[i];
+    row.append(fieldset(`${bridgeMode(state) ? end.label : 'Wall'} — limits and overrides`, pick(FIELDS.end, ['settlementLimit', 'settlementLimitJust', 'formationMuOverride', 'formationMuJust']), end, state, end, onChange));
+  });
+  p.append(row);
+  p.append(fieldset('Settlement criteria (defaults — replace with the bridge supplier’s limits)', pick(FIELDS.basis, ['basis.settlementDiffLimit', 'basis.tiltLimit', 'basis.transDiffLimit', 'basis.settlementJust']), state, state, null, onChange));
+  const box = h('div', 'lg-livelists');
+  p.append(box);
+  live.limits = (o) => {
+    const D = o?.design;
+    if (!D) return;
+    const ov = D.overrides || [];
+    box.innerHTML = `${D.blocked.length ? `<div class="lg-blocked"><strong>NOT VALID — RE-RUN / RESOLVE</strong><ul>${D.blocked.map((b) => `<li>${e(b)}</li>`).join('')}</ul></div>` : '<p class="lg-okline">✓ Nothing blocks the sheet.</p>'}
+      ${ov.length ? `<div class="lg-overrides"><h4 class="lg-h4">Overrides</h4><div class="tbl-scroll"><table class="tbl-input tbl-readonly"><thead><tr><th>Item</th><th>Value</th><th>Justification</th><th>Status</th></tr></thead><tbody>${ov.map((x) => `<tr><td>${e(x.item)}</td><td>${e(String(x.value))}</td><td>${e(x.justification || '— none —')}</td><td>${x.status === 'applied' ? '⚑ applied' : x.status === 'rejected' ? '✗ rejected' : '! ignored — add a justification'}</td></tr>`).join('')}</tbody></table></div></div>` : '<p class="field-help">No overrides.</p>'}
+      <div class="lg-bars">${D.ends.flatMap((x) => x.util.filter((u) => /^E6/.test(u.id)).map((u) => barRow(x, u, D))).join('')}</div>`;
+  };
+  if (api.getOutput()?.design) live.limits(api.getOutput());
+}
+
+// One utilisation bar with icon, value and the change since the last run.
+function barRow(x, u, D) {
+  const cls = u.info ? (u.flag ? 'near' : 'ok') : u.util > 1 ? 'fail' : u.util > 0.9 ? 'near' : 'ok';
+  const icon = cls === 'fail' ? '✗' : cls === 'near' ? '!' : '✓';
+  const val = u.info ? (u.flag ? 'CHECK DETAIL' : 'OK') : `${fmt(u.util, 2)} ${cls === 'fail' ? 'FAIL' : cls === 'near' ? 'NEAR' : 'OK'}`;
+  const d = deltaTxt(`${x.endIdx}-${u.id}`, u.util);
+  return `<div class="lg-bar-row" title="${e(u.zone || u.gov || '')}"><span class="lg-bar-label">${D.bridge ? `${e(x.label.replace('End ', 'E'))} · ` : ''}${e(u.id)} ${e(u.title)}</span><span class="lg-bar-track"><span class="lg-bar-fill ${cls}" style="width:${Math.min(100, (u.util / 1.2) * 100)}%"></span><span class="lg-bar-limit"></span></span><span class="lg-bar-val ${cls}"><span aria-hidden="true">${icon}</span> ${val}${d ? ` <span class="lg-delta ${d.up ? 'up' : 'down'}">${e(d.text)}</span>` : ''}</span></div>`;
+}
+
+// Reads the course table back into the BB standard family (base width B,
+// rear step s, courses below the seat, seat depth, ballast wall). custom =
+// true when the table does not follow the family.
+function familyFromCourses(A) {
+  const c = A.courses;
+  const n = c.length;
+  if (n < 3) return { B: Math.max(1600, (c[0]?.u_rear ?? 2400) - (c[0]?.u_front ?? 0)), s: 0, nBelow: 1, shelf: 1600, ballast: 800, frontStep: true, custom: true };
+  const seat = c[n - 2], bal = c[n - 1];
+  const B = c[0].u_rear - c[0].u_front;
+  const upperRear = seat.u_rear;
+  const ballast = bal.u_rear - bal.u_front;
+  const frontStep = seat.u_front > 0;
+  const fam = { B, s: B - upperRear, nBelow: n - 2, shelf: frontStep ? upperRear - seat.u_front : Math.max(1600, ballast + 800), ballast, frontStep };
+  const regen = familyCourses({ ...fam, orient: c[0].orient });
+  const same = c[0].u_front === 0 && regen.every((r, i) => r.u_front === c[i].u_front && r.u_rear === c[i].u_rear && c[i].v_start == null && c[i].v_end == null && c[i].height === 800);
+  return { ...fam, custom: !same };
+}
+
+function renderQuickSize(p, state, end, idx, onChange, api, live) {
+  const A = end.arrangement;
+  const label = bridgeMode(state) ? end.label : 'Wall';
+  const top = h('div', 'lg-autobox');
+  const auto = h('button', 'btn', `Auto-size ${e(label)}`);
+  auto.type = 'button';
+  auto.disabled = !bridgeMode(state);
+  const msg = h('span', 'field-help', bridgeMode(state) ? 'Finds the smallest arrangement that passes every check. Takes a few seconds.' : 'Auto-size is for bridge bank seats. Use the sliders.');
+  auto.addEventListener('click', () => {
+    auto.disabled = true;
+    runAuto(state, api, idx, (f, t) => { msg.textContent = t; });
+  });
+  top.append(auto, msg);
+  const as = state.cache?.autosize?.[idx];
+  if (as) top.append(h('p', 'field-help', `<strong>Last auto-size:</strong> ${e(as.why)}`));
+  p.append(top);
+
+  const f = familyFromCourses(A);
+  if (f.custom) p.append(h('p', 'lg-mod', 'The course table has been edited in Full detail. Moving a slider replaces it with the standard stepped arrangement.'));
+  const grid = h('div', 'lg-sizer');
+  const readout = h('p', 'lg-readout');
+  const ctrls = {};
+  const sync = () => {
+    Object.entries(ctrls).forEach(([k, c]) => { c.r.value = f[k]; c.out.textContent = c.fmtV(f[k]); });
+    readout.textContent = `${f.nBelow + 2} courses: ${f.nBelow} below the seat (base ${fmt(f.B / 1000, 1)} m${f.s ? `, stepped to ${fmt((f.B - f.s) / 1000, 1)} m above` : ''}), seat ${fmt(f.shelf / 1000, 1)} m deep, ballast wall ${f.ballast} mm.`;
+  };
+  const apply = () => {
+    f.shelf = Math.max(f.shelf, f.ballast + 800);
+    if (f.B - f.s < f.shelf) f.B = Math.ceil((f.shelf + f.s) / 400) * 400;
+    A.courses = familyCourses({ B: f.B, s: f.s, nBelow: f.nBelow, shelf: f.shelf, frontStep: f.frontStep, ballast: f.ballast, orient: A.courses[0]?.orient || 'Mixed' });
+    A.mode = 'check';
+    sync();
+    onChange(false);
+  };
+  const slider = (key, lab, min, max, step, fmtV, help) => {
+    const w = h('div', 'field field-slider');
+    const id = `lgq-${key}`;
+    const l = h('label', null, `${e(lab)} <output class="lg-val"></output>`);
+    l.htmlFor = id;
+    const r = document.createElement('input');
+    r.type = 'range'; r.id = id; r.min = min; r.max = max; r.step = step;
+    r.addEventListener('input', () => { f[key] = Number(r.value); apply(); });
+    w.append(l, r);
+    if (help) w.append(h('div', 'field-help', e(help)));
+    ctrls[key] = { r, out: l.querySelector('output'), fmtV };
+    grid.append(w);
+  };
+  slider('B', 'Base width B', 1600, Math.max(6400, A.Bmax_mm || 6400, f.B), 400, (v) => `${fmt(v / 1000, 1)} m`, 'Front to back of the bottom course.');
+  slider('nBelow', 'Courses below the seat', 1, 8, 1, (v) => `${v} — overall ${fmt((v + 2) * 0.8, 1)} m high`);
+  slider('s', 'Rear step above the bottom course', 0, 1600, 400, (v) => (v ? `${v} mm (fill sits on the heel)` : 'none'));
+  slider('shelf', 'Seat depth', 1600, 3200, 400, (v) => `${fmt(v / 1000, 1)} m`, 'Front-to-back depth of the seat course: ballast wall + bearing shelf (≥ 800 mm).');
+  slider('ballast', 'Ballast wall thickness', 800, 1200, 400, (v) => `${v} mm`);
+
+  const lw = h('div', 'field field-slider');
+  const ll = h('label', null, 'Abutment length L (along the face) <output class="lg-val"></output>');
+  ll.htmlFor = 'lgq-L';
+  const lr = document.createElement('input');
+  lr.type = 'range'; lr.id = 'lgq-L'; lr.min = 1600; lr.max = Math.max(12000, A.L_mm); lr.step = 400; lr.value = A.L_mm;
+  const lout = ll.querySelector('output');
+  const lset = () => { lr.value = A.L_mm; lout.textContent = `${fmt(A.L_mm / 1000, 1)} m`; };
+  lr.addEventListener('input', () => { A.L_mm = Number(lr.value); lset(); onChange(false); });
+  const dl = h('button', 'btn secondary btn-xs', `Reset to default (${fmt(defaultL_mm(state.project) / 1000, 1)} m)`);
+  dl.type = 'button';
+  dl.addEventListener('click', () => { A.L_mm = defaultL_mm(state.project); lset(); onChange(false); });
+  lset();
+  lw.append(ll, lr, dl);
+  grid.append(lw);
+
+  const pw = h('div', 'field field-slider');
+  const pl = h('label', null, 'Pad thickness <output class="lg-val"></output>');
+  pl.htmlFor = 'lgq-pad';
+  const pr = document.createElement('input');
+  pr.type = 'range'; pr.id = 'lgq-pad'; pr.min = 0; pr.max = 500; pr.step = 25; pr.value = A.pad.thk;
+  const pout = pl.querySelector('output');
+  const pAuto = h('label', 'lg-check');
+  const pc = document.createElement('input');
+  pc.type = 'checkbox'; pc.checked = A.pad.mode === 'auto';
+  pAuto.append(pc, document.createTextNode(' Set by the levels (auto)'));
+  const padText = () => { pout.textContent = A.pad.mode === 'auto' ? 'auto' : `${A.pad.thk} mm${A.pad.thk === 0 ? ' (none)' : ''}`; pr.disabled = A.pad.mode === 'auto'; };
+  pr.addEventListener('input', () => { A.pad.thk = Number(pr.value); padText(); onChange(false); });
+  pc.addEventListener('change', () => { A.pad.mode = pc.checked ? 'auto' : 'fixed'; padText(); onChange(false); });
+  padText();
+  pw.append(pl, pr, pAuto);
+  grid.append(pw);
+
+  const fsS = h('fieldset', 'lg-fieldset');
+  fsS.append(h('legend', null, `${label} — arrangement`));
+  fsS.append(grid, readout);
+  sync();
+  p.append(fsS);
+
+  p.append(fieldset(`${label} — pad width`, FIELDS.arrangement.filter((d) => ['arrangement.pad.overhangFront', 'arrangement.pad.overhangRear', 'arrangement.pad.material'].includes(d.path)), end, state, end, onChange));
+  if (bridgeMode(state)) p.append(dispersionFieldset(state, end, onChange));
+  p.append(fieldset(`${label} — backfill`, [
+    { path: 'fill.material', label: 'Backfill material', type: 'select', options: Object.keys(FILL_MATERIALS).filter((k) => FILL_MATERIALS[k].phi).map((k) => [k, k]).concat([['User', 'User-defined']]) },
+    { path: 'fill.phi', label: 'Backfill φ′k', unit: '°', min: 20, max: 45, step: 0.5 },
+  ], end, state, end, (st) => {
+    const m = FILL_MATERIALS[end.fill.material];
+    if (st && m && m.phi) { end.fill.gamma = m.gamma; end.fill.gammaSat = m.gamma + 1; end.fill.phi = m.phi; end.fill.phiCv = m.phiCv; }
+    onChange(st);
+  }));
+
+  // Live section and the worst checks, refreshed after every recalculation.
+  const liveBox = h('div', 'lg-livebox');
+  const fig = h('figure', 'lg-fig');
+  const bars = h('div', 'lg-bars');
+  liveBox.append(fig, bars);
+  p.append(liveBox);
+  const fig3 = h('figure', 'lg-fig lg-fig-wide');
+  if (bridgeMode(state)) p.append(fig3);
+  live.size = (out) => {
+    const D = out?.design;
+    const k = D ? D.ends.findIndex((q) => q.endIdx === idx) : -1;
+    const x = D?.ends?.[k];
+    if (!x) return;
+    try { fig.innerHTML = diagramD2(state, D, k); } catch { fig.innerHTML = ''; }
+    try { fig3.innerHTML = D.bridge ? drawingD3b(state, D, k, { compact: true }) : ''; } catch { fig3.innerHTML = ''; }
+    const zl = x.dispersion?.zones?.length > 1 ? ` Load path: ${x.dispersion.mode}, ${x.dispersion.zones.filter((z) => z.kind === 'loaded').map((z) => `L_eff ${fmt(z.L, 2)} m`).join(', ')}.` : '';
+    bars.innerHTML = `<p class="lg-readout">${e(x.label || label)}: ${x.layout.totalBlocks} blocks, ${fmt(x.layout.totalMassT, 1)} t, formation ${fmt(x.levels.formation, 2)} mAOD.${e(zl)} Worst six checks:</p>${[...x.util].filter((u) => !u.info).sort((a, b) => b.util - a.util).slice(0, 6).map((u) => barRow(x, u, D)).join('')}`;
+  };
+  const cur = api.getOutput();
+  if (cur?.design) live.size(cur);
+  p.append(h('p', 'field-help', 'Block types, bond, wings, pad overhangs and passive resistance are in Full detail → Arrangement.'));
+}
+
+function renderQuickResults(p, state, api, live) {
+  const box = h('div');
+  p.append(box);
+  const figs = h('div', 'lg-livebox');
+  const f2 = h('figure', 'lg-fig'), f3 = h('figure', 'lg-fig');
+  figs.append(f2, f3);
+  p.append(figs);
+  p.append(h('p', 'field-help', 'All drawings and CSV exports are in Full detail → Drawings & exports. The design needs CEng review before acceptance.'));
+  live.results = (o) => {
+    const D = o?.design;
+    if (!D) { box.innerHTML = '<p class="muted">Calculating…</p>'; return; }
+    const items = [];
+    const item = (ok, text) => items.push(`<li class="${ok ? 'ok' : 'warn'}"><span aria-hidden="true">${ok ? '✓' : '!'}</span> ${text}</li>`);
+    D.blocked.forEach((b) => item(false, `<strong>Resolve:</strong> ${e(b)}`));
+    item(D.ends.every((x) => x.maxUtil <= 1), `All checks at or below 1.0 (governing ${fmt(D.maxUtil, 2)}).`);
+    if (D.bridge) item(!!D.slope, D.slope ? 'Global stability run and up to date.' : 'Run global stability from the results panel (a few seconds).');
+    item(!D.errors.length, D.errors.length ? `${D.errors.length} input error(s) — see Warnings in the results panel.` : 'No input errors.');
+    const hd = api.headerDetails || {};
+    item(!!(hd.projectNo && hd.projectTitle && hd.engineerInitials), hd.projectNo && hd.projectTitle && hd.engineerInitials ? 'Project details complete.' : 'Fill in the project details (step 1).');
+    item(!(D.overrides || []).some((x) => x.status !== 'applied'), (D.overrides || []).length ? `${D.overrides.length} override(s) — see step 6 and the summary sheet.` : 'No overrides.');
+    box.innerHTML = `<ul class="lg-checklist">${items.join('')}</ul><div class="lg-bars">${D.ends.flatMap((x) => x.util.map((u) => barRow(x, u, D))).join('')}</div>`;
+    const k = Math.min(D.ends.length - 1, state.ui.activeEnd || 0);
+    try { f2.innerHTML = diagramD2(state, D, k, { compact: true }); } catch { f2.innerHTML = ''; }
+    try { f3.innerHTML = D.bridge ? drawingD3b(state, D, k, { compact: true }) : ''; } catch { f3.innerHTML = ''; }
+  };
+  if (api.getOutput()?.design) live.results(api.getOutput());
 }
 
 // --- Tab 1 -----------------------------------------------------------------------------
@@ -204,6 +802,7 @@ function renderProject(p, state, onChange) {
     det.append(h('summary', null, usingLibrary(state) ? 'Bridge geometry and bearings — set from the selected standard bridge (open to adjust)' : 'Bridge geometry and bearings'));
     det.append(fieldset('Bridge geometry and bearings', FIELDS.project.filter((d) => !PROJECT_MAIN.includes(d.path)), state, state, null, onChange));
     p.append(det);
+    renderBearings(p, state, onChange);
     p.append(h('p', 'field-help', 'Choose the bridge on the Loads tab — selecting a standard Beaver Bridges product fills in the span, width, bearings and loads.'));
   } else {
     p.append(h('p', 'field-help', 'Retaining-wall mode: analysis per metre run (set L = 1000 mm) or for the full length; bridge, hydraulic and crossing checks are not run.'));
@@ -220,6 +819,8 @@ function applyLibrary(state, rangeKey, rowKey, loading) {
   Object.assign(state.project, d.project);
   state.loads.trafficModels = clone(d.trafficModels);
   state.loads.reactions = clone(d.reactions);
+  state.loads.unit = 'kN';
+  state.ends.forEach((en) => { en.bearings = []; });
   state.loads.library = { range: rangeKey, row: rowKey, loading: d.loading, sig: null };
   state.loads.library.sig = loadSig(state.loads);
   // Widen the abutments if the bridge's bearings don't fit on them.
@@ -271,7 +872,16 @@ function renderBridgeLibrary(state, onChange, api) {
   fs.append(grid);
 
   rangeSel.addEventListener('change', () => {
-    if (rangeSel.value === 'bespoke') { L.library = { range: 'bespoke', row: null, sig: null }; onChange(true); return; }
+    if (rangeSel.value === 'bespoke') {
+      // Library model labels (e.g. a supplier's "Model 2") must not carry over
+      // to a bespoke schedule — the designer chooses the load model.
+      if (L.library?.row) {
+        L.trafficModels.forEach((m) => { m.standard = ''; });
+      }
+      L.library = { range: 'bespoke', row: null, sig: null };
+      onChange(true);
+      return;
+    }
     L.library = { range: rangeSel.value, row: null, sig: null };
     onChange(true);
   });
@@ -311,42 +921,131 @@ function renderBridgeLibrary(state, onChange, api) {
   return fs;
 }
 
-function renderLoads(p, state, onChange, api) {
+// Both ends fixed: the deck restrains thermal movement — the designer must
+// give the restraint force (not a sliding-bearing friction value).
+function renderThermalRestraint(state, onChange) {
+  state.loads.thermalRestraint = state.loads.thermalRestraint || { F: null, justification: '' };
+  const fs = fieldset('Both ends fixed — thermal restraint (required)', [
+    { path: 'F', label: 'Thermal restraint force per end', unit: 'kN', min: 0, step: 1, nullable: true, help: 'From the bearing stiffness and the thermal movement (BS EN 1991-1-5 §6), or the supplier. Not a sliding-bearing value.' },
+    { path: 'justification', label: 'Source / justification', type: 'text' },
+  ], state.loads.thermalRestraint, state, null, onChange, 'lg-required');
+  fs.prepend(h('p', 'lg-mod', 'Both abutments have fixed bearings. The supplier schedule usually has one fixed and one sliding end — check the bearing fixity on the Bridge & bearings step.'));
+  return fs;
+}
+
+// Bearing layout per end: position along the face and fixity.
+function renderBearings(p, state, onChange) {
+  const nb = Math.max(1, Number(state.project.bearingsPerEnd) || 1);
+  const row = h('div', 'lg-cols');
+  [0, 1].forEach((i) => {
+    const end = state.ends[i];
+    end.bearings = end.bearings || [];
+    const L = (end.arrangement.L_mm || 4800) / 1000;
+    const auto = endBearings(state, i, L, 0);
+    while (end.bearings.length < nb) end.bearings.push({ v_mm: null, fixity: '' });
+    end.bearings.length = nb;
+    const fs = h('fieldset', 'lg-fieldset');
+    fs.append(h('legend', null, `${e(end.label)} — bearings`));
+    const tbl = createTable({
+      columns: [
+        { key: 'v_mm', label: 'v from abutment end', type: 'number', unit: 'mm', step: 50, nullable: true },
+        { key: 'fixity', label: 'Fixity', type: 'select', options: [['', `From fixed end (${auto[0]?.fixity || '—'})`], ['fixed', 'Fixed'], ['guided', 'Guided (fixed transversely)'], ['free', 'Free (sliding)']] },
+      ],
+      rows: end.bearings, onChange: () => onChange(false), compact: true, allowDuplicate: false, minRows: nb, rowLabel: (r, k) => `B${k + 1}`,
+    });
+    tbl.querySelector('.tbl-bar')?.remove();
+    fs.append(tbl, h('p', 'field-help', `Blank v = at the bearing centres: ${auto.map((b) => Math.round(b.v * 1000)).join(', ')} mm. Braking and longitudinal wind go to fixed bearings only; free and guided bearings carry ±μ(G + traffic).`));
+    row.append(fs);
+  });
+  p.append(row);
+}
+
+// Load path through the blocks (dispersion.js).
+function dispersionFieldset(state, end, onChange) {
+  const A = end.arrangement;
+  A.dispersion = A.dispersion || { mode: 'bond', angleRatio: 2, justification: '', capBeam: { on: false, b: null, h: null, As: null, fck: 32, fyk: 500, cover: 50 } };
+  A.dispersion.capBeam = A.dispersion.capBeam || { on: false, fck: 32, fyk: 500, cover: 50 };
+  const D = A.dispersion;
+  const fs = fieldset(`${bridgeMode(state) ? end.label : 'Wall'} — load path from the bearings`, [
+    { path: 'mode', label: 'Dispersion through the courses', type: 'select', options: DISPERSION_MODES, rebuild: false, help: 'Dry-laid blocks: no friction or tension on vertical joints (Elite), so a bearing load reaches only the blocks it bears on. Bond-based is the default; None is the lower bound.' },
+    { path: 'angleRatio', label: 'Spread angle (V per 1 H)', min: 0.5, max: 4, step: 0.5, slider: [0.5, 4, 0.5], showIf: () => D.mode === 'angle', help: '2 = 2V:1H. Capped by the bond-based spread.' },
+    { path: 'justification', label: 'Justification for the angle (required)', type: 'text', showIf: () => D.mode === 'angle' },
+    { path: 'capBeam.on', label: 'RC capping beam / distribution slab present', type: 'checkbox', showIf: () => D.mode === 'full' },
+    { path: 'capBeam.b', label: 'Beam width b', unit: 'mm', min: 300, step: 50, nullable: true, showIf: () => D.mode === 'full' && D.capBeam.on },
+    { path: 'capBeam.h', label: 'Beam depth h', unit: 'mm', min: 200, step: 25, nullable: true, showIf: () => D.mode === 'full' && D.capBeam.on },
+    { path: 'capBeam.As', label: 'Longitudinal steel per face As', unit: 'mm²', min: 0, step: 50, nullable: true, showIf: () => D.mode === 'full' && D.capBeam.on },
+    { path: 'capBeam.fck', label: 'Concrete fck', unit: 'N/mm²', min: 20, max: 50, step: 1, showIf: () => D.mode === 'full' && D.capBeam.on },
+  ], D, state, end, onChange);
+  return fs;
+}
+
+function renderLoads(p, state, onChange, api, quick = false, noLibrary = false) {
   const L = state.loads;
   if (bridgeMode(state)) {
-    p.append(renderBridgeLibrary(state, onChange, api));
+    if (!noLibrary) p.append(renderBridgeLibrary(state, onChange, api));
     const det = h('details', 'lg-more');
     det.open = !usingLibrary(state);
     det.append(h('summary', null, usingLibrary(state) ? 'Edit loads (bespoke override of the standard values)' : 'Bridge loads (bespoke)'));
     const fs1 = h('fieldset', 'lg-fieldset');
     fs1.append(h('legend', null, 'Vehicle models (checked one at a time)'));
+    L.trafficModels.forEach((m) => { if (m.standard === undefined) m.standard = ''; });
     fs1.append(createTable({
-      columns: [{ key: 'name', label: 'Model', type: 'text', width: '8rem', structural: true }, { key: 'excludeSurchargeWind', label: 'No accompanying traffic (exclude surcharge & wind)', type: 'checkbox' }],
-      rows: L.trafficModels, onChange: (x) => onChange(x.structural), newRow: () => ({ name: `M${L.trafficModels.length + 1}`, excludeSurchargeWind: false }), compact: true,
+      columns: [
+        { key: 'name', label: 'Model', type: 'text', width: '8rem', structural: true },
+        { key: 'standard', label: 'Load model', type: 'select', options: LOAD_STANDARDS, width: '13rem', validate: (v) => (v ? '' : 'Choose the load model') },
+        { key: 'excludeSurchargeWind', label: 'No accompanying traffic (exclude surcharge & wind)', type: 'checkbox' },
+      ],
+      rows: L.trafficModels, onChange: (x) => onChange(x.structural), newRow: () => ({ name: `M${L.trafficModels.length + 1}`, standard: '', excludeSurchargeWind: false }), compact: true,
     }));
+    if (L.trafficModels.some((m) => String(m.standard || '').startsWith('BD37')) && state.basis.preset === 'A2') fs1.append(h('p', 'lg-mod', 'BD37 nominal loads combined with EN 1990 A2 factors — basis to be justified (verify).'));
     det.append(fs1);
     const fs2 = h('fieldset', 'lg-fieldset');
     fs2.append(h('legend', null, 'Characteristic reactions per abutment'));
-    fs2.append(h('p', 'field-help', 'X longitudinal (+ End 1 → End 2), Y transverse, Z vertical downward, kN. Paste rows straight from a spreadsheet.'));
+    const uw = h('div', 'field lg-unitsel');
+    const ul = h('label', null, 'Units of the schedule');
+    ul.htmlFor = 'lg-units';
+    const us = document.createElement('select');
+    us.id = 'lg-units';
+    LOAD_UNITS.forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; us.append(o); });
+    us.value = L.unit || 'kN';
+    us.addEventListener('change', () => { L.unit = us.value; onChange(true); });
+    uw.append(ul, us, h('div', 'field-help', 'Enter values exactly as the supplier schedule gives them. Tonnes are converted with g = 9.81 m/s². “Per truss” treats every row as per bearing. The kN column shows the value used.'));
+    fs2.append(uw);
+    fs2.append(h('p', 'field-help', 'X longitudinal (+ End 1 → End 2), Y transverse, Z vertical downward. Paste rows straight from a spreadsheet.'));
     const models = L.trafficModels.map((m) => m.name);
+    const k = (L.unit || 'kN').startsWith('t') ? 9.81 : 1;
+    const unitTxt = (L.unit || 'kN').startsWith('t') ? 't' : 'kN';
+    const chip = (row) => {
+      const sp = h('span', 'lg-kn');
+      sp.lgRow = row;
+      return sp;
+    };
+    const updChips = () => fs2.querySelectorAll('.lg-kn').forEach((sp) => {
+      const r = sp.lgRow;
+      const parts = [['Z', r.Z], ['X', r.X], ['Y', r.Y]].filter(([, v]) => Number(v)).map(([a, v]) => `${a} ${fmt(Number(v) * k, 1)}`);
+      sp.textContent = parts.length ? `${parts.join(' · ')} kN` : '—';
+    });
     fs2.append(createTable({
       columns: [
         { key: 'name', label: 'Load', type: 'text', width: '10rem' },
         { key: 'group', label: 'Type', type: 'select', options: REACTION_GROUPS.map((g) => [g.value, g.label]), width: '10rem' },
         { key: 'model', label: 'Model', type: 'select', options: [['', '—'], ...models.map((m) => [m, m])] },
         { key: 'basis', label: 'Basis', type: 'select', options: [['total', 'Per abutment'], ['perBearing', 'Per bearing']] },
-        { key: 'Z', label: 'Z', type: 'number', unit: 'kN' }, { key: 'X', label: 'X', type: 'number', unit: 'kN' }, { key: 'Y', label: 'Y', type: 'number', unit: 'kN' },
-        { key: 'reversible', label: '±', type: 'checkbox' }, { key: 'xFixedOnly', label: 'X at fixed end only', type: 'checkbox' },
+        { key: 'Z', label: 'Z', type: 'number', unit: unitTxt }, { key: 'X', label: 'X', type: 'number', unit: unitTxt }, { key: 'Y', label: 'Y', type: 'number', unit: unitTxt },
+        { key: 'kn', label: 'Used (kN)', render: chip },
+        { key: 'reversible', label: '±', type: 'checkbox' }, { key: 'xFixedOnly', label: 'X at fixed bearings only', type: 'checkbox' },
         { key: 'psi0', label: 'ψ0', type: 'number', step: 0.05 }, { key: 'psi1', label: 'ψ1', type: 'number', step: 0.05 }, { key: 'psi2', label: 'ψ2', type: 'number', step: 0.05 },
         { key: 'end', label: 'End', type: 'select', options: ['Both', 'End 1', 'End 2'] },
       ],
-      rows: L.reactions, onChange: (x) => onChange(x.structural), newRow: () => newReaction({ name: `Load ${L.reactions.length + 1}` }),
+      rows: L.reactions, onChange: (x) => { updChips(); onChange(x.structural); }, newRow: () => newReaction({ name: `Load ${L.reactions.length + 1}` }),
     }));
+    updChips();
     det.append(fs2);
     p.append(det);
+    if (bothEndsFixed(state)) p.append(renderThermalRestraint(state, onChange));
   }
-  p.append(fieldset('Approach', FIELDS.loads, state, state, null, onChange));
-  if (bridgeMode(state)) {
+  p.append(fieldset('Approach', quick ? pick(FIELDS.loads, ['loads.surcharge', 'loads.surchargeSetback']) : FIELDS.loads, state, state, null, onChange));
+  if (bridgeMode(state) && !quick) {
     const more = h('details', 'lg-more');
     more.append(h('summary', null, 'Construction, hydraulic and accidental actions'));
     const fs3 = h('fieldset', 'lg-fieldset');
@@ -612,6 +1311,7 @@ function renderArrangement(p, state, end, idx, onChange, api) {
     if (m !== 'Mass concrete' && A.pad.gamma > 22) A.pad.gamma = 21;
     onChange(s);
   }));
+  if (bridgeMode(state)) p.append(dispersionFieldset(state, end, onChange));
   if (bridgeMode(state)) {
     p.append(fieldset('Wing returns (checked as free-standing gravity sections)', [
       { path: 'arrangement.wings.on', label: 'Wing returns', type: 'checkbox' },
@@ -751,6 +1451,7 @@ export function renderResults(panel, output, state, api) {
   const D = output.design;
   panel.innerHTML = '';
   if (!D) { panel.innerHTML = '<p class="muted">Calculating…</p>'; return; }
+  rollUtil(D);
   const v = h('div', `verdict-banner ${output.verdict.pass ? 'pass' : 'fail'}`, `${output.verdict.pass ? 'PASS' : 'FAIL'} — ${e(output.verdict.message)}`);
   panel.append(v);
   const tiles = h('div', 'stat-grid');
@@ -800,9 +1501,11 @@ export function renderResults(panel, output, state, api) {
       const r = h('button', 'lg-bar-row');
       r.type = 'button';
       const cls = u.info ? (u.flag ? 'near' : 'ok') : u.util > 1 ? 'fail' : u.util > 0.9 ? 'near' : 'ok';
+      const icon = cls === 'fail' ? '✗' : cls === 'near' ? '!' : '✓';
       const val = u.info ? (u.flag ? 'CHECK DETAIL' : 'OK') : `${fmt(u.util, 3)} ${u.util > 1 ? 'FAIL' : u.util > 0.9 ? 'NEAR' : 'OK'}`;
-      r.innerHTML = `<span class="lg-bar-label">${e(u.id)} ${e(u.title)}</span><span class="lg-bar-track"><span class="lg-bar-fill ${cls}" style="width:${Math.min(100, (u.util / 1.2) * 100)}%"></span><span class="lg-bar-limit"></span></span><span class="lg-bar-val ${cls}">${val}</span>`;
-      if (u.gov) r.title = `Governing: ${u.gov}`;
+      const d = deltaTxt(`${x.endIdx}-${u.id}`, u.util);
+      r.innerHTML = `<span class="lg-bar-label">${e(u.id)} ${e(u.title)}</span><span class="lg-bar-track"><span class="lg-bar-fill ${cls}" style="width:${Math.min(100, (u.util / 1.2) * 100)}%"></span><span class="lg-bar-limit"></span></span><span class="lg-bar-val ${cls}"><span aria-hidden="true">${icon}</span> ${val}${d ? ` <span class="lg-delta ${d.up ? 'up' : 'down'}">${e(d.text)}</span>` : ''}</span>`;
+      if (u.gov || u.zone) r.title = `Governing: ${u.zone || ''}${u.zone && u.gov ? ' — ' : ''}${u.gov || ''}`;
       r.addEventListener('click', () => { const t = document.getElementById(`rep-e${x.endIdx + 1}-${u.id.replace(/[a-d]$/, '')}`) || document.getElementById(`rep-e${x.endIdx + 1}-${u.id}`); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
       list.append(r);
     });

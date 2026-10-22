@@ -4,14 +4,14 @@
 
 import { evaluate } from './engine.js';
 import { SCHEMA_VERSION, migrate } from './schema.js';
-import { bbStandard, eliteExample, v2Synthetic } from './presets.js';
+import { bbStandard, eliteExample, v2Synthetic, r1TwoBearing } from './presets.js';
 import { customUI, renderResults, loadInitialState } from './ui.js';
 import { buildReport } from './report.js';
 import { diagramD2 } from './drawings.js';
 import { burlandBurbidge } from './settlement.js';
 import { searchCircles } from './slope.js';
 import { buildLayout, solveLevels, resolveCourses } from './layout.js';
-import { rotateToAbutment, earthCoefficient } from './actions.js';
+import { rotateToAbutment, earthCoefficient, normaliseLoads } from './actions.js';
 import { parseSPT, n60, overburdenCN, phiPHT, phiHatanaka, cuStroud } from '../../js/geo-core.js';
 import { LEGATO_BLOCKS, legatoVolume } from '../../js/shared-data.js';
 import { clone, inputHash } from './schema.js';
@@ -65,9 +65,9 @@ function calculate(state) {
   });
   const verdict = {
     pass: o.pass,
-    message: o.pass ? 'All checks pass (utilisation ≤ 1.0). Requires CEng review before acceptance.' : `One or more checks fail or are incomplete — governing utilisation ${o.maxUtil.toFixed(3)}${o.errors.length ? `; ${o.errors.length} input error(s)` : ''}${o.xFails.length ? `; ${o.xFails.length} crossing failure(s)` : ''}.`,
+    message: o.pass ? 'All checks pass (utilisation ≤ 1.0). Requires CEng review before acceptance.' : `${o.blocked.length ? `NOT VALID — resolve ${o.blocked.length} item(s) before printing. ` : ''}One or more checks fail or are incomplete — governing utilisation ${o.maxUtil.toFixed(3)}${o.errors.length ? `; ${o.errors.length} input error(s)` : ''}${o.xFails.length ? `; ${o.xFails.length} crossing failure(s)` : ''}.`,
   };
-  return { results, steps: [], warnings: [...o.errors, ...o.xFails, ...o.warnings], verdict, design: o, values: values(o) };
+  return { results, steps: [], warnings: [...o.blocked, ...o.errors, ...o.xFails, ...o.warnings], verdict, design: o, values: values(o), blocked: o.blocked };
 }
 
 const rel = (value, pct = 0.02) => ({ value, tol: Math.max(Math.abs(value) * pct, 1e-4) });
@@ -125,9 +125,9 @@ export default {
   title: 'Bridge Abutment — Legato Interlocking Block (Bank Seat)',
   category: 'Bridge Substructures — Precast Block Abutments',
   tag: 'EC7 DA1 · Legato',
-  version: '1.2.1',
+  version: '1.4.0',
   schemaVersion: SCHEMA_VERSION,
-  debounceMs: 300,
+  debounceMs: 250,
   references: [
     'BS EN 1990:2002+A1:2005 — Basis of structural design, Annex A2 (bridges); UK NA Tables NA.A2.4(A)–(C)',
     'BS EN 1997-1:2004+A1:2013 (Eurocode 7) — 2.4.5.2 characteristic values; 2.4.7 limit states; 6.5.2 & Annex D bearing; 6.5.3 sliding; 6.5.4 eccentricity; 6.6 settlement; 9.3.2.2 unplanned excavation; Section 11 overall stability; UK NA',
@@ -309,10 +309,121 @@ export default {
         },
       },
       {
-        name: 'Unit — combination generator (situation counts)',
+        name: 'Unit — combination generator (situation counts). v1.4.0: braking-leading is now its own situation, so V2 = traffic-leading + braking-leading + no deck (was 2), BB = 8 (was 6).',
         inputs: {},
         run: () => ({ results: [{ symbol: 'V2_situations', value: calculate(v2Synthetic()).values.e1_situations }, { symbol: 'BB_situations', value: calculate(bbStandard()).values.e1_situations }] }),
-        expect: { V2_situations: { value: 2, tol: 0 }, BB_situations: { value: 6, tol: 0 } },
+        expect: { V2_situations: { value: 3, tol: 0 }, BB_situations: { value: 8, tol: 0 } },
+      },
+      {
+        name: 'R1 — two-bearing regression (per bearing: G 52.0, HA 258.0, braking 244.3 at the fixed end, wind 7.8/15.7, thermal 12.8, skidding 73.6; μ = 0.2; A2 factors). Expected: G + Q char. 620 kN per end; L1 Fz,d = 1.35 × 310 = 418.5 kN; C1 Vd(traffic leading) − Vd(no deck) = 1.35 × 620 = 837.0 kN per end (full length) and 1.35 × 310 = 418.5 kN in each one-bearing zone (bond-based); braking-leading governs E2 at the fixed end; free-end X = 0.2 × 310 = 62.0 kN per bearing',
+        inputs: r1TwoBearing(),
+        run: (st) => {
+          const D = evaluate(st);
+          const [e1, e2] = D.ends;
+          const L1 = (e) => e.local.find((l) => l.id === 'L1');
+          const fullCopy = clone(st);
+          fullCopy.ends.forEach((en) => { en.arrangement.dispersion = { mode: 'full', angleRatio: 2, justification: '', capBeam: { on: true, b: 2400, h: 600, As: 2500, fck: 32, fyk: 500, cover: 50 } }; });
+          const Df = evaluate(fullCopy);
+          const vOf = (e, id) => Math.max(...e.checks.E1.rows.filter((r) => r.label.startsWith('DA1-C1') && r.label.includes(e.situations.find((x) => x.id.startsWith(id))?.label ?? '###') && !r.label.includes('G inf')).map((r) => r.V));
+          const freeX = e2.geom.bridgeItems.filter((it) => it.bearing === 0 && (it.group === 'Gf' || it.group === 'Qf')).reduce((a, it) => a + Math.abs(it.Fu), 0);
+          return { values: {
+            GQ_e1: e1.deckChar.V, GQ_e2: e2.deckChar.V, L1_Fzd: L1(e1).Fzd,
+            dVd_C1: vOf(Df.ends[0], 'S1-') - vOf(Df.ends[0], 'S3-'),
+            dVd_zone: vOf(e1, 'S1-') - vOf(e1, 'S3-'),
+            E2_braking_e1: /braking leading/.test(e1.checks.E2.governing?.label || '') ? 1 : 0,
+            freeX_b1: freeX,
+          } };
+        },
+        expect: {
+          GQ_e1: { value: 620, tol: 0.1 }, GQ_e2: { value: 620, tol: 0.1 }, L1_Fzd: { value: 418.5, tol: 0.05 },
+          dVd_C1: { value: 837.0, tol: 0.5 }, dVd_zone: { value: 418.5, tol: 0.5 }, E2_braking_e1: { value: 1, tol: 0 }, freeX_b1: { value: 62.0, tol: 0.05 },
+        },
+      },
+      {
+        name: 'Dispersion — full length reproduces the v1.3.0 whole-abutment results to 0.1% (BB standard preset, G + wind + thermal only so the situations are unchanged; baseline captured from v1.3.0)',
+        inputs: {},
+        run: () => {
+          const s = bbStandard();
+          s.loads.trafficModels = [];
+          s.loads.reactions = s.loads.reactions.filter((r) => ['G', 'G2', 'Qw', 'Qt'].includes(r.group));
+          s.ends.forEach((en) => { en.arrangement.dispersion = { mode: 'full', angleRatio: 2, justification: '', capBeam: { on: true, b: 2400, h: 600, As: 2500, fck: 32, fyk: 500, cover: 50 } }; });
+          const D = evaluate(s);
+          const v = {};
+          D.ends.forEach((e, i) => { const C = e.checks; Object.assign(v, { [`e${i + 1}_E1`]: C.E1.util, [`e${i + 1}_E1V`]: C.E1.governing.V, [`e${i + 1}_E2`]: C.E2.util, [`e${i + 1}_E2H`]: C.E2.governing.H, [`e${i + 1}_E3`]: C.E3.util }); });
+          return { values: v };
+        },
+        expect: {
+          e1_E1: { value: 0.435692, tol: 0.000436 }, e1_E1V: { value: 1092.043, tol: 1.092 }, e1_E2: { value: 0.930226, tol: 0.00093 }, e1_E2H: { value: 305.965, tol: 0.306 }, e1_E3: { value: 0.282658, tol: 0.000283 },
+          e2_E1: { value: 0.578145, tol: 0.000578 }, e2_E1V: { value: 888.366, tol: 0.888 }, e2_E2: { value: 0.925190, tol: 0.000925 }, e2_E2H: { value: 197.822, tol: 0.198 }, e2_E3: { value: 0.199266, tol: 0.000199 },
+        },
+      },
+      {
+        name: 'Dispersion — R1 End 1 bond-based (default) gives higher bearing and sliding utilisation than full length (both printed)',
+        inputs: r1TwoBearing(),
+        run: (st) => {
+          const e1 = evaluate(st).ends[0];
+          const fl = e1.dispersion.fullLength;
+          return { values: { E1_bond: e1.checks.E1.util, E1_full: fl.E1, E2_bond: e1.checks.E2.util, E2_full: fl.E2, E1_higher: e1.checks.E1.util > fl.E1 ? 1 : 0, E2_higher: e1.checks.E2.util > fl.E2 ? 1 : 0 } };
+        },
+        expect: { E1_higher: { value: 1, tol: 0 }, E2_higher: { value: 1, tol: 0 } },
+      },
+      {
+        name: 'Unit — E4 uses one B (founding width at the formation) for the kern, the formation pressure and A′ (v1.4.0 fix; BB standard preset with a Type 1 pad)',
+        inputs: bbStandard(),
+        run: (st) => {
+          const e1 = evaluate(st).ends[0];
+          const C = e1.checks;
+          const B1 = C.E4.governing.B, B2 = C.E4.govQ.formation.B, B3 = C.E1.governing.B;
+          return { values: { dB_kern_pressure: Math.abs(B1 - B2), dB_kern_E1: Math.abs(B1 - B3) } };
+        },
+        expect: { dB_kern_pressure: { value: 0, tol: 1e-9 }, dB_kern_E1: { value: 0, tol: 1e-9 } },
+      },
+      {
+        name: 'Guards — tan δk = 0 override is rejected (sliding unchanged, not zero); settlement limit without justification is ignored; DFL 0 blocks the sheet and X3 is INCOMPLETE',
+        inputs: {},
+        run: () => {
+          const base = evaluate(bbStandard());
+          const s = bbStandard();
+          s.ends[0].formationMuOverride = 0; s.ends[0].formationMuJust = 'test';
+          s.ends[1].settlementLimit = 55;
+          const D = evaluate(s);
+          const s2 = bbStandard(); s2.crossing.DFL = 0;
+          const D2 = evaluate(s2);
+          return { values: {
+            dE2: Math.abs(D.ends[0].checks.E2.util - base.ends[0].checks.E2.util),
+            rejected: D.overrides.some((o) => o.status === 'rejected') ? 1 : 0,
+            limit2: D.ends[1].settle.limit,
+            blocked: D2.blocked.length > 0 ? 1 : 0,
+            x3: D2.crossing.ends[0].items.find((i) => i.id === 'X3').status === 'incomplete' ? 1 : 0,
+            pass2: D2.pass ? 1 : 0,
+          } };
+        },
+        expect: { dE2: { value: 0, tol: 1e-9 }, rejected: { value: 1, tol: 0 }, limit2: { value: 25, tol: 0 }, blocked: { value: 1, tol: 0 }, x3: { value: 1, tol: 0 }, pass2: { value: 0, tol: 0 } },
+      },
+      {
+        name: 'Unit — reaction units: R1 schedule entered in tonnes (values ÷ 9.81) gives the same kN loads',
+        inputs: {},
+        run: () => {
+          const a = r1TwoBearing();
+          const b = r1TwoBearing();
+          b.loads.unit = 't';
+          b.loads.reactions.forEach((r) => { r.X /= 9.81; r.Y /= 9.81; r.Z /= 9.81; });
+          const na = normaliseLoads(a), nb2 = normaliseLoads(b);
+          return { values: { dZ: Math.max(...na.reactions.map((r, i) => Math.abs(r.Z - nb2.reactions[i].Z))), GQ_t: evaluate(b).ends[0].deckChar.V } };
+        },
+        expect: { dZ: { value: 0, tol: 1e-9 }, GQ_t: { value: 620, tol: 0.1 } },
+      },
+      {
+        name: 'Unit — traffic row with no model is assigned, not dropped (v1.4.0 fix)',
+        inputs: {},
+        run: () => {
+          const s = r1TwoBearing();
+          s.loads.trafficModels = [];
+          s.loads.reactions.forEach((r) => { r.model = ''; });
+          const D = evaluate(s);
+          return { values: { GQ: D.ends[0].deckChar.V, models: D.ends[0].geom.models.length, s1: D.ends[0].situations.filter((x) => x.id.startsWith('S1')).length } };
+        },
+        expect: { GQ: { value: 620, tol: 0.1 }, models: { value: 1, tol: 0 }, s1: { value: 2, tol: 0 } },
       },
     ],
   },

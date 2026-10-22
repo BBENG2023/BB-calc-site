@@ -13,6 +13,10 @@ import windPressureEc1 from '../calcs/wind-pressure-ec1.js';
 import herasFencing from '../calcs/heras-fencing.js';
 import serviceProtectionSlab from '../calcs/service-protection-slab.js';
 import legatoAbutment from '../calcs/legato-abutment/index.js';
+import consolidation1d from '../calcs/consolidation-1d.js';
+import pileAxialEc7 from '../calcs/pile-axial-ec7.js';
+import pileGroupSettlement from '../calcs/pile-group-settlement.js';
+import craneOutriggerMats from '../calcs/crane-outrigger-mats.js';
 
 export const registry = [
   bearingCapacity,
@@ -26,4 +30,8 @@ export const registry = [
   herasFencing,
   serviceProtectionSlab,
   legatoAbutment,
+  consolidation1d,
+  pileAxialEc7,
+  pileGroupSettlement,
+  craneOutriggerMats,
 ];

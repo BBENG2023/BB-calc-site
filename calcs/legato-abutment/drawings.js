@@ -138,11 +138,11 @@ export function diagramD2(state, design, endIdx = 0, opts = {}) {
     }
     if (bridge && lay.seat) {
       const b = g.bearing;
-      let Vk = 0, Hk = 0;
-      g.bridgeItems.forEach((it) => { if (it.group === 'G' || it.group === 'G2' || (it.group === 'Qv' && it.model === state.loads.trafficModels[0]?.name)) Vk += it.Fz; if (it.group === 'Qb' && it.model === state.loads.trafficModels[0]?.name) Hk += Math.abs(it.Fu); });
+      const dc = er.deckChar || { G: 0, Q: 0, V: 0, H: 0, model: '' };
+      const Vk = dc.V, Hk = dc.H;
       const ya = Y(b.zH + (P.deckDepth || 0.9) + 0.35);
       o += arrow(X(b.u), ya - (compact ? 10 : 16), X(b.u), Y(b.zH) - 2, { stroke: '#b3261e', width: 1.6, head: 5 });
-      if (!compact) o += text(X(b.u) + 4, ya - 8, `V = ${fx(Vk, 0)} kN (G + Q char.)`, { size: 8.5, fill: '#b3261e' });
+      if (!compact) o += text(X(b.u) + 4, ya - 8, `V = G ${fx(dc.G, 0)} + Q ${fx(dc.Q, 0)} = ${fx(Vk, 0)} kN (char.${dc.model ? `, ${dc.model}` : ''})`, { size: 8.5, fill: '#b3261e' });
       if (Hk) {
         o += arrow(X(b.u) + 1, Y(b.zH), X(b.u) - view.L(0.9), Y(b.zH), { stroke: '#b3261e', width: 1.6, head: 5 });
         if (!compact) o += text(X(b.u) - view.L(0.95), Y(b.zH) - 4, `H = ${fx(Hk, 0)} kN`, { size: 8.5, fill: '#b3261e', anchor: 'end' });
@@ -436,6 +436,72 @@ export function drawingD4(state, design, endIdx = 0) {
   return svgDoc(W, H, o, { title: `Transverse section ${er.label}` });
 }
 
+// --- D3b Longitudinal elevation: load path from the bearings ------------------------------
+
+export function drawingD3b(state, design, endIdx = 0, opts = {}) {
+  const er = design.ends[endIdx];
+  if (!er || state.project.mode !== 'bridge') return '';
+  const g = er.geom, P = state.project;
+  const dsp = er.dispersion || { paths: [], zones: [] };
+  const compact = !!opts.compact;
+  const W = compact ? 640 : 900, H = compact ? 330 : 440;
+  const seat = er.layout.seat;
+  const zTop = (seat ? seat.z1 : g.courses[g.courses.length - 1].z1) + 0.5;
+  const v0 = Math.min(g.footing.v0, 0) - 0.4, v1 = Math.max(g.footing.v1, g.L) + 0.4;
+  const view = makeView({ x0: v0, x1: v1, y0: -g.pad.t - 0.45, y1: zTop }, { width: W, height: H, pad: 34, padBottom: compact ? 60 : 78 });
+  const X = view.X, Y = view.Y;
+  let o = '';
+  // Zones at formation (shaded bands under the pad).
+  (dsp.zones || []).forEach((z) => {
+    const fill = z.kind === 'loaded' ? '#fde3c4' : '#e3e8f2';
+    o += rect(X(z.v0), Y(-g.pad.t), X(z.v1) - X(z.v0), Y(-g.pad.t - 0.18) - Y(-g.pad.t), { fill, stroke: INK, width: 0.6 });
+  });
+  // Courses up to the seat (the ballast wall is behind the bearings): front
+  // bond row of each course, as seen from the channel.
+  const uFront = (c) => Math.min(...(c.pieces?.length ? c.pieces.map((p) => p.u0) : [c.u0]));
+  g.courses.filter((c) => !seat || c.idx <= seat.idx).forEach((c) => {
+    const uf = uFront(c);
+    const ps = (c.pieces || []).filter((p) => Math.abs(p.u0 - uf) < 1e-6);
+    if (!ps.length) o += rect(X(c.v0), Y(c.z1), X(c.v1) - X(c.v0), Y(c.z0) - Y(c.z1), { fill: '#ddd', stroke: INK });
+    ps.forEach((p) => {
+      o += rect(X(p.v0), Y(c.z1), X(p.v1) - X(p.v0), Y(c.z0) - Y(c.z1), { fill: blockColour(p.code, p.special), stroke: INK, width: 0.8, opacity: 0.55 });
+      if (!compact && X(p.v1) - X(p.v0) > 26) o += text((X(p.v0) + X(p.v1)) / 2, (Y(c.z0) + Y(c.z1)) / 2 + 3, p.code, { size: 7.5, weight: 700, anchor: 'middle', fill: INK });
+    });
+  });
+  if (g.pad.t > 0) o += rect(X(g.pad.v0), Y(0), X(g.pad.v1) - X(g.pad.v0), Y(-g.pad.t) - Y(0), { fill: url(g.pad.rigid ? HATCH.concrete : HATCH.type1), stroke: INK, width: 0.8 });
+  // Dispersion fans: course ranges stepped down to the formation range.
+  (dsp.paths || []).forEach((pth) => {
+    const pts = [];
+    const cs = [...pth.courses];
+    const top = seat ? seat.z1 : 0;
+    pts.push([pth.plate[0], top]);
+    cs.forEach((c) => { const cc = g.courses.find((x) => x.idx === c.idx); pts.push([c.a, cc.z1], [c.a, cc.z0]); });
+    pts.push([pth.formation[0], -g.pad.t]);
+    const right = [[pth.formation[1], -g.pad.t]];
+    [...cs].reverse().forEach((c) => { const cc = g.courses.find((x) => x.idx === c.idx); right.push([c.b, cc.z0], [c.b, cc.z1]); });
+    right.push([pth.plate[1], top]);
+    o += polygon([...pts, ...right].map(([v, z]) => [X(v), Y(z)]), { fill: 'rgba(226,122,0,0.18)', stroke: ORANGE, width: 1.4, dash: '5 3' });
+  });
+  // Bearings and plates.
+  const Bp = P.bearingPlateB / 1000;
+  (g.bearings || []).forEach((b) => {
+    const zS = g.bearing.zSeat, zH = g.bearing.zH;
+    o += rect(X(b.v - Bp / 2), Y(zH), X(b.v + Bp / 2) - X(b.v - Bp / 2), Math.max(Y(zS) - Y(zH), 3), { fill: '#333', stroke: INK });
+    o += arrow(X(b.v), Y(zH) - (compact ? 22 : 30), X(b.v), Y(zH) - 2, { stroke: '#b3261e', width: 1.6, head: 5 });
+    o += text(X(b.v), Y(zH) - (compact ? 26 : 34), `B${b.k + 1} ${b.fixity}`, { size: compact ? 8 : 9, weight: 800, anchor: 'middle', fill: '#b3261e' });
+  });
+  // L_eff dimensions per zone.
+  const yd = Y(-g.pad.t - 0.18) + 14;
+  (dsp.zones || []).forEach((z) => { o += dimH(X(z.v0), X(z.v1), yd, `${z.kind === 'loaded' ? 'L_eff' : 'unloaded'} ${Math.round(z.L * 1000)}`, { above: false, size: compact ? 7.5 : 8.5 }); });
+  if (!compact) {
+    o += legend(20, H - 50, [{ label: 'Load path (dispersion fan)', fill: 'rgba(226,122,0,0.18)', stroke: ORANGE }, { label: 'Loaded zone at formation', fill: '#fde3c4' }, { label: 'Unloaded zone', fill: '#e3e8f2' }, { label: 'Bearing plate', fill: '#333' }], { cols: 4, colWidth: 210, size: 8, title: `Dispersion: ${dsp.mode}` });
+    o += titleStrip(W, H, { title: `D3b — Elevation of the front face and load path, ${er.label}`, drawingNo: `D3b-${endIdx + 1}` });
+  } else {
+    o += text(10, H - 8, `Dispersion: ${dsp.mode} · schematic, not for construction`, { size: 8, fill: GREY });
+  }
+  return svgDoc(W, H, o, { title: `Load path ${er.label}` });
+}
+
 // --- D5 SPT N60 and derived parameters vs level ----------------------------------------------
 
 export function drawingD5(state, design, endIdx = 0) {
@@ -519,6 +585,7 @@ export function allDrawings(state, design) {
   design.ends.forEach((e, i) => {
     out.push({ key: `D2-${i + 1}`, title: `D2 Abutment section — ${e.label}`, svg: diagramD2(state, design, i) });
     out.push({ key: `D3-${i + 1}`, title: `D3 Layer plans — ${e.label}`, svg: drawingD3(state, design, i) });
+    if (design.bridge) out.push({ key: `D3b-${i + 1}`, title: `D3b Load path elevation — ${e.label}`, svg: drawingD3b(state, design, i) });
     if (design.bridge) out.push({ key: `D4-${i + 1}`, title: `D4 Transverse section — ${e.label}`, svg: drawingD4(state, design, i) });
     out.push({ key: `D5-${i + 1}`, title: `D5 SPT and parameters — ${e.label}`, svg: drawingD5(state, design, i) });
   });

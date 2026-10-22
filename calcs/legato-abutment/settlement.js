@@ -3,27 +3,9 @@
 
 import { sigmaVAt } from './ground.js';
 
-// Burland & Burbidge (1985). q = gross bearing pressure (kPa), sigmaV0 =
-// maximum previous effective overburden at founding level (kPa).
-export function burlandBurbidge({ B, L, Nbar, q, sigmaV0 = 0, tYears = 3, Hs = null, R3 = 0.3, Rt = 0.2 }) {
-  const Ic = 1.71 / Math.pow(Math.max(Nbar, 1e-6), 1.4);
-  const zI = Math.pow(B, 0.763);
-  const r = L / B;
-  const fs = Math.pow((1.25 * r) / (r + 0.25), 2);
-  const fl = Hs !== null && Hs < zI ? (Hs / zI) * (2 - Hs / zI) : 1;
-  const ft = tYears > 3 ? 1 + R3 + Rt * Math.log10(tYears / 3) : 1;
-  const qTerm = q > sigmaV0 ? q - (2 / 3) * sigmaV0 : q / 3;
-  const si = fs * fl * qTerm * Math.pow(B, 0.7) * Ic; // mm
-  return { Ic, zI, fs, fl, ft, qTerm, si, st: si * ft };
-}
-
-// SPT corrections for B&B: fine/silty sand below water, gravel.
-export function bbCorrectN(N, granType, belowWater) {
-  let n = N;
-  if (granType === 'Fine/silty sand' && belowWater && n > 15) n = 15 + 0.5 * (n - 15);
-  if (granType === 'Gravel') n *= 1.25;
-  return n;
-}
+// Burland & Burbidge (1985) and its N corrections now live in js/geo-core.js.
+import { burlandBurbidge, bbCorrectN } from '../../js/geo-core.js';
+export { burlandBurbidge, bbCorrectN };
 
 // 1D consolidation beneath a B × L footing, 2:1 stress spread, to the depth
 // where Δσ′ < 0.2 σ′v0. mv in m²/MN.

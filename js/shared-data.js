@@ -276,3 +276,54 @@ export function interpLookup(table, x) {
   }
   return table[keys[keys.length - 1]];
 }
+
+// ---------------------------------------------------------------------------
+// Piles — UK National Annex to BS EN 1997-1:2004+A1:2013. Verify against the
+// current NA before relying on any value (flagged in the pile calc).
+// ---------------------------------------------------------------------------
+
+// Tables A.NA.6 (driven), A.NA.7 (bored), A.NA.8 (CFA): partial resistance
+// factors γb (base), γs (shaft), γt (total), γs;t (tension). R4 depends on
+// whether serviceability is explicitly verified (load test or SLS calc).
+export const PILE_RESISTANCE_FACTORS_UKNA = {
+  driven: { R1: { b: 1.0, s: 1.0, t: 1.0, st: 1.0 }, R4: { b: 1.7, s: 1.5, t: 1.7, st: 2.0 }, R4sls: { b: 1.5, s: 1.3, t: 1.5, st: 1.7 } },
+  bored: { R1: { b: 1.0, s: 1.0, t: 1.0, st: 1.0 }, R4: { b: 2.0, s: 1.6, t: 2.0, st: 2.0 }, R4sls: { b: 1.7, s: 1.4, t: 1.7, st: 1.7 } },
+  cfa: { R1: { b: 1.0, s: 1.0, t: 1.0, st: 1.0 }, R4: { b: 2.0, s: 1.6, t: 2.0, st: 2.0 }, R4sls: { b: 1.7, s: 1.4, t: 1.7, st: 1.7 } },
+};
+
+// Table A.NA.10: correlation factors ξ3 (mean) and ξ4 (minimum) against the
+// number of ground test profiles n. Linear interpolation between rows.
+export const PILE_XI_UKNA = [
+  { n: 1, xi3: 1.55, xi4: 1.55 }, { n: 2, xi3: 1.47, xi4: 1.39 }, { n: 3, xi3: 1.42, xi4: 1.33 },
+  { n: 4, xi3: 1.38, xi4: 1.29 }, { n: 5, xi3: 1.36, xi4: 1.26 }, { n: 7, xi3: 1.33, xi4: 1.20 },
+  { n: 10, xi3: 1.30, xi4: 1.15 },
+];
+
+export function pileXi(n) {
+  const T = PILE_XI_UKNA;
+  if (n <= T[0].n) return { xi3: T[0].xi3, xi4: T[0].xi4 };
+  if (n >= T[T.length - 1].n) return { xi3: T[T.length - 1].xi3, xi4: T[T.length - 1].xi4 };
+  for (let i = 0; i < T.length - 1; i++) {
+    const a = T[i], b = T[i + 1];
+    if (n >= a.n && n <= b.n) {
+      const f = (n - a.n) / (b.n - a.n);
+      return { xi3: a.xi3 + f * (b.xi3 - a.xi3), xi4: a.xi4 + f * (b.xi4 - a.xi4) };
+    }
+  }
+  return { xi3: T[0].xi3, xi4: T[0].xi4 };
+}
+
+// UK NA A.3.3.2 / 2.4.1(9): model factor on resistance calculated from
+// ground test results. 1.2 only where verified by a maintained load test
+// taken to the calculated unfactored ultimate resistance.
+export const PILE_MODEL_FACTOR_UKNA = { calc: 1.4, loadTest: 1.2 };
+
+// Interface factors for coarse-grained soils (after Kulhawy 1984, as used in
+// UK practice texts): Ks/K0 and δ/φ′ by installation method / pile material.
+export const PILE_INTERFACE = {
+  'Bored': { KsK0: 0.9, deltaRatio: 1.0, cls: 'bored' },
+  'CFA': { KsK0: 0.9, deltaRatio: 1.0, cls: 'cfa' },
+  'Driven precast concrete': { KsK0: 1.5, deltaRatio: 0.9, cls: 'driven', displacement: 'large' },
+  'Driven closed steel tube': { KsK0: 1.5, deltaRatio: 0.7, cls: 'driven', displacement: 'large' },
+  'Driven H-pile': { KsK0: 1.0, deltaRatio: 0.7, cls: 'driven', displacement: 'small' },
+};

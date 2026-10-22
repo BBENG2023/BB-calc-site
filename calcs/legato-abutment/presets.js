@@ -13,6 +13,7 @@ function setPreset(s, key) {
 export function eliteExample() {
   const s = blankState();
   s.meta.presetName = 'Elite guide example (retaining wall mode)';
+  s.meta.validation = true;
   s.meta.notes = 'Elite retaining wall guide design example: 6 courses on a 2.5 × 0.3 m concrete base, fill γ 18, φ′ 30°, q = 10 kPa, unity factors. Elite’s LimitState GEO analysis gives FoS 1.47 for toppling at C1/C2; the rigid-block hand method here gives 1.57 — the difference is method (LimitState models block interaction and the discretised fill wedge), not data.';
   s.project.mode = 'retaining-wall';
   setPreset(s, 'Legacy');
@@ -30,6 +31,7 @@ export function eliteExample() {
   e.fillSurfaceZ = 4.4;
   e.fill = { material: 'User', gamma: 18, gammaSat: 19, phi: 30, phiCv: 30 };
   e.formationMuOverride = 0.5;
+  e.formationMuJust = 'Elite guide design example: base friction μ = 0.5 (EPCL-2017-RWRG-01).';
   e.groundMode = 'manual';
   e.manualProfile = [{ topLevel: 100.5, baseLevel: 90, cls: 'Granular', desc: 'Founding soil (not given in the Elite example — assumed)', gamma: 18, gammaSat: 19, phi: 30, c: 0, cu: null, mv: null, E: 20, N60: 20, granType: 'Sand', PI: null, rockRd: null }];
   e.arrangement.L_mm = 1000;
@@ -49,6 +51,7 @@ export function eliteExample() {
 export function v2Synthetic() {
   const s = blankState();
   s.meta.presetName = 'V2 synthetic 4-course bank seat (validation)';
+  s.meta.validation = true;
   setPreset(s, 'A1');
   s.basis.weightBasis = 'stated';
   s.basis.nibBasis = 'none'; // V2 figures are friction only
@@ -56,7 +59,7 @@ export function v2Synthetic() {
   s.project.bearingHeight = 0;
   s.project.span = 11.2;
   s.project.overallLength = 11.5;
-  s.loads.trafficModels = [{ name: 'LM1', excludeSurchargeWind: false }];
+  s.loads.trafficModels = [{ name: 'LM1', standard: 'Bespoke', excludeSurchargeWind: false }];
   s.loads.reactions = [
     newReaction({ name: 'Bridge permanent (abutment total)', group: 'G', Z: 120 }),
     newReaction({ name: 'Traffic vertical (abutment total)', group: 'Qv', model: 'LM1', Z: 300, psi0: 0.75, psi1: 0.75, psi2: 0 }),
@@ -82,6 +85,9 @@ export function v2Synthetic() {
   e.arrangement.pad = { mode: 'fixed', thk: 0, min: 150, max: 500, overhangFront: 0, overhangRear: 0, material: 'Type 1 (SHW 803)', gamma: 21, phi: 40, phiCv: 35 };
   e.arrangement.groutBed = 0;
   e.arrangement.bearingGrout = 0;
+  // V2 checks the whole-abutment method: full-length dispersion (RC capping
+  // beam assumed so the whole length acts together).
+  e.arrangement.dispersion = { mode: 'full', angleRatio: 2, justification: '', capBeam: { on: true, b: 2400, h: 600, As: 2500, fck: 32, fyk: 500, cover: 50 } };
   const e2 = clone(e);
   e2.label = 'End 2';
   e2.frontChainage = 13.6;
@@ -162,7 +168,7 @@ function bbStandardBase() {
   setPreset(s, 'A2');
   s.basis.weightBasis = 'computed';
   Object.assign(s.project, { bridgeDescription: 'Modular panel footbridge/vehicle bridge (synthetic)', span: 12.192, overallLength: 12.692, deckWidth: 4.2, clearWidth: 3.7, deckDepth: 0.9, bearingCentres: 3.0, bearingsPerEnd: 2, bearingPlateL: 300, bearingPlateB: 400, bearingHeight: 50, fixedEnd: 1, slidingMu: 0.2, skew: 0, modularIncrement: 3.048 });
-  s.loads.trafficModels = [{ name: 'LM1', excludeSurchargeWind: false }, { name: 'SV80', excludeSurchargeWind: true }];
+  s.loads.trafficModels = [{ name: 'LM1', standard: 'EN 1991-2 LM1', excludeSurchargeWind: false }, { name: 'SV80', standard: 'CS 454 / SV', excludeSurchargeWind: true }];
   s.loads.reactions = [
     newReaction({ name: 'Deck self-weight', group: 'G', Z: 110 }),
     newReaction({ name: 'Surfacing & parapets', group: 'G2', Z: 25 }),
@@ -247,6 +253,32 @@ function bbStandardBase() {
       ] }),
   ];
   s.loads.launch = [];
+  return s;
+}
+
+// R1 — two-bearing regression case: per-bearing schedule with BD37 HA
+// nominal traffic, braking at the fixed end and a free end on sliding
+// bearings (μ = 0.2). Geometry and ground from the BB standard preset.
+export function r1TwoBearing() {
+  const s = bbStandard();
+  s.meta.presetName = 'R1 two-bearing HA case (regression)';
+  s.meta.validation = true;
+  setPreset(s, 'A2');
+  s.loads.library = { range: 'bespoke', row: null, sig: null };
+  Object.assign(s.project, { bearingsPerEnd: 2, bearingCentres: 3.0, fixedEnd: 1, slidingMu: 0.2, skew: 0 });
+  s.ends.forEach((en) => { en.bearings = []; });
+  s.loads.unit = 'kN';
+  s.loads.trafficModels = [{ name: 'HA', standard: 'BD37 HA', excludeSurchargeWind: false }];
+  const pb = { basis: 'perBearing', end: 'Both' };
+  s.loads.reactions = [
+    newReaction({ name: 'Permanent', group: 'G', Z: 52.0, ...pb }),
+    newReaction({ name: 'HA vertical', group: 'Qv', model: 'HA', Z: 258.0, psi0: 0.75, psi1: 0.75, psi2: 0, ...pb }),
+    newReaction({ name: 'Braking', group: 'Qb', model: 'HA', X: 244.3, reversible: true, xFixedOnly: true, psi0: 0, psi1: 0, psi2: 0, ...pb }),
+    newReaction({ name: 'Wind', group: 'Qw', X: 7.8, Y: 15.7, reversible: true, xFixedOnly: true, psi0: 0.6, psi1: 0.2, psi2: 0, ...pb }),
+    newReaction({ name: 'Thermal', group: 'Qt', X: 12.8, reversible: true, xFixedOnly: true, psi0: 0.6, psi1: 0.6, psi2: 0.5, ...pb }),
+    newReaction({ name: 'Skidding', group: 'A', Y: 73.6, reversible: true, psi0: 1, psi1: 1, psi2: 1, ...pb }),
+  ];
+  s.cache = { slope: null, autosize: [null, null] };
   return s;
 }
 

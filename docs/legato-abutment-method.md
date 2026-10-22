@@ -169,6 +169,100 @@ SPT test at that depth.
   Favourable variable actions are omitted, except that vertical traffic
   always accompanies its own braking in bearing and SLS.
 
+## 6a. v1.4.0 — loads, combinations and the load path
+
+**Load schedule.** Units: kN, tonnes, kN per truss or tonnes per truss
+(per truss = per bearing). Tonnes are converted with g = 9.81 m/s². Every
+traffic model carries a load model standard: BD37 HA/HB, EN 1991-2 LM1/LM2,
+CS 454 / SV, Footbridge, Supplier-defined or Bespoke. The sheet is blocked
+until one is chosen. A vertical traffic or braking row with a blank or
+unknown model is assigned to the first model, with a warning. It is never
+dropped.
+
+Fixing that last point fixes the v1.2.1 bug where traffic never reached Vd.
+
+**Plausibility warnings** read "Check units — value looks like tonnes". They
+are screening values only:
+- G per bearing below 20 kN on a vehicular bridge;
+- vertical traffic per bearing below G;
+- braking per end outside 0.5–1.5 × the range implied by the model:
+  - BD37 6.10.1: 250 + 8 kN/m, not more than 750 kN;
+  - EN 1991-2 4.4.1(2): 180 to 900 kN.
+
+**Bearings.** Each bearing has a position v and a fixity:
+
+| Load | Taken by |
+|---|---|
+| Vertical (Z) | All bearings, equally |
+| X marked "fixed bearings only" (braking, longitudinal wind) | Fixed bearings at that end |
+| Y | Fixed and guided bearings |
+| ±μ(G + concurrent vertical traffic) | Free and guided bearings |
+
+If both ends have fixed bearings, a thermal restraint force with a
+justification is required.
+
+**Situations:**
+- **Traffic-leading (gr1a-type):** vertical traffic + approach surcharge.
+- **Braking-leading:** braking + its concurrent vertical traffic + surcharge.
+  Concurrent vertical traffic is at ψ1 for EN 1991-2 models (gr2) and at full
+  value for BD37 (combination 4), CS 454, supplier and bespoke models.
+- **Wind-leading:** vertical wind down and up (uplift).
+- **Thermal-leading.**
+- **Accidental** for each group A row (EN 1990 6.4.3.3: ψ1 on the leading
+  traffic, ψ2 on the others).
+
+Vertical traffic is unfavourable (included) for bearing, L1 and SLS, and
+favourable (zero) for sliding and the EQU stabilising side.
+
+**Load path (dispersion.js).** The blocks are dry-laid, with no friction or
+tension on vertical joints. A bearing load therefore reaches only the blocks
+it bears on.
+- **Seat.** Start from the seat block(s) under the plate. A plate across a
+  joint within one bond row is flagged.
+- **Through the courses.** Down each course:
+  - **Bond-based (default):** the zone grows to the full length of the blocks
+    it overlaps in the course below.
+  - **None:** a plumb stack (lower bound).
+  - **Angle:** user V:1H per course, capped by bond-based; needs a
+    justification.
+  - **Full length:** only with an RC capping beam / distribution slab. Rigid
+    beam, BS EN 1992-1-1 6.1 bending and 6.2.2 shear without links; verify.
+- **Through the pad:** 2V:1H (editable).
+
+Bearing zones are merged where they overlap and capped at the abutment ends.
+
+E1–E4 and settlement run on each zone as its own prism:
+- **Loaded zones:** the bearing actions, plus the blocks, fill, earth
+  pressure and surcharge over L_eff.
+- **Unloaded remainder:** no bridge actions.
+
+The governing zone is reported. Sliding uses each zone's own area and
+weight; there is no help from neighbouring stacks. Interface (I1–I4) and
+local checks remain whole-abutment checks.
+
+**Guards:**
+- Overrides take effect only with a justification. They are listed in red on
+  the summary sheet.
+- A tan δk override of 0 or less is rejected.
+- Drained and undrained sliding are both reported; the lower governs
+  (EC7 6.5.3 — both conditions must be satisfied).
+- Settlement criteria (defaults — replace with the supplier's limits):
+
+| Criterion | Default | Check |
+|---|---|---|
+| Total settlement per end | 25 mm | E6 |
+| End to end | 20 mm | Differential |
+| Tilt | 1 in 500 | E6t |
+| Transverse between bearings | 10 mm | E6x |
+
+- E4 uses B = founding width at the formation throughout.
+- **The sheet is NOT VALID (Print disabled, watermark on every sheet) when:**
+  - auto-size is stale in auto mode;
+  - X5 span mismatch exceeds 25 mm;
+  - DFL is unset or 0 on a watercourse;
+  - a load model, thermal restraint or reaction schedule is missing.
+- X3 reports INCOMPLETE without a DFL.
+
 ## 7. Checks
 
 | Check | Method | Clause |

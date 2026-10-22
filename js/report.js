@@ -57,8 +57,11 @@ export function buildReportSheet(calc, inputs, output, visibleInputNames, header
 // BB house-style sheet header: company block + project block, then the
 // navy title strip. `sheetText` overrides the Sheet No cell (multi-sheet
 // reports pass "3 of 18").
-export function buildSheetHeader(calc, headerDetails = {}, sheetText = null, titleText = null) {
+export function buildSheetHeader(calc, headerDetails = {}, sheetText = null, titleText = null, opts = {}) {
   const h = headerDetails;
+  // opts.flagMissing: print "PROJECT DETAILS MISSING" (amber) in blank project
+  // fields. Off by default so other calcs are unchanged.
+  const miss = opts.flagMissing ? '<span class="rs-missing">PROJECT DETAILS MISSING</span>' : '&nbsp;';
   const head = el('div', 'rs-head');
   const headLeft = el('div', 'rs-head-left');
   headLeft.innerHTML = `
@@ -71,11 +74,11 @@ export function buildSheetHeader(calc, headerDetails = {}, sheetText = null, tit
   const headRight = el('div', 'rs-head-right');
   headRight.innerHTML = `
     <table class="rs-meta-table">
-      <tr><td class="rs-meta-label">Project No</td><td class="rs-meta-fill">${escapeHtml(h.projectNo || '') || '&nbsp;'}</td></tr>
-      <tr><td class="rs-meta-label">Project Title</td><td class="rs-meta-fill">${escapeHtml(h.projectTitle || '') || '&nbsp;'}</td></tr>
+      <tr><td class="rs-meta-label">Project No</td><td class="rs-meta-fill">${escapeHtml(h.projectNo || '') || miss}</td></tr>
+      <tr><td class="rs-meta-label">Project Title</td><td class="rs-meta-fill">${escapeHtml(h.projectTitle || '') || miss}</td></tr>
       <tr><td class="rs-meta-label">Sheet No</td><td class="rs-meta-fill">${sheetText !== null ? escapeHtml(sheetText) : `${escapeHtml(h.sheetNo || '') || '&nbsp;'}${h.sheetOf ? ` of ${escapeHtml(h.sheetOf)}` : ''}`}</td></tr>
       <tr><td class="rs-meta-label">Date</td><td class="rs-meta-fill">${escapeHtml(h.date || '') || todayUK()}</td></tr>
-      <tr><td class="rs-meta-label">Engineer</td><td class="rs-meta-fill">${escapeHtml(h.engineerInitials || '') || '&nbsp;'}</td></tr>
+      <tr><td class="rs-meta-label">Engineer</td><td class="rs-meta-fill">${escapeHtml(h.engineerInitials || '') || miss}</td></tr>
       <tr><td class="rs-meta-label">Checked</td><td class="rs-meta-fill">${escapeHtml(h.checkedCategory || '') || '&nbsp;'}</td></tr>
     </table>`;
   head.append(headLeft, headRight);

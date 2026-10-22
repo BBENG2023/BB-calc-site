@@ -302,6 +302,7 @@ function renderCustomCalcPage(root, calc, params) {
       console.error(err);
       reportFrame.innerHTML = `<p class="muted">Report unavailable: ${escapeHtml(err.message)}</p>`;
     }
+    applyBlocked(output, reportFrame, root);
     listeners.forEach((fn) => { try { fn(output); } catch (err) { console.error(err); } });
   }
 
@@ -987,6 +988,20 @@ function wireButtons(calc, row, values, getForm, onReset, scheduleRecalc, toast)
   });
 }
 
+// A calc may return `output.blocked` (array of reasons). The printed sheet is
+// then not valid: Print is disabled and the report carries a watermark.
+// Calcs that never set it are unaffected.
+function applyBlocked(output, reportFrame, scope) {
+  const reasons = Array.isArray(output?.blocked) ? output.blocked : [];
+  const on = reasons.length > 0;
+  reportFrame.classList.toggle('report-blocked', on);
+  (scope || document).querySelectorAll('[data-action="print"]').forEach((b) => {
+    b.disabled = on;
+    b.title = on ? `Printing disabled — ${reasons.join(' ')}` : '';
+    b.setAttribute('aria-disabled', on ? 'true' : 'false');
+  });
+}
+
 // --- Recalculation --------------------------------------------------------------
 
 function recalc(calc, values, resultsPanel, reportFrame, diagramFrame, headerDetails, pipeRequest) {
@@ -1010,6 +1025,7 @@ function recalc(calc, values, resultsPanel, reportFrame, diagramFrame, headerDet
   const visibleNames = new Set(calc.inputs.filter((d) => isVisible(d, values)).map((d) => d.name));
   reportFrame.innerHTML = '';
   reportFrame.append(buildReportSheet(calc, values, output, visibleNames, headerDetails));
+  applyBlocked(output, reportFrame);
 }
 
 function renderResults(panel, output, pipeRequest) {
