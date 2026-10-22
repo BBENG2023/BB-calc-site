@@ -10,22 +10,22 @@ description, `future` label) once the repo has a remote.
   dataset is 900k+ rows — unsuitable for a static site with no backend.
   `wind-pressure-ec1.js` takes Vb,map as a manual entry from the NA.1 map
   instead.
-- **Plate Load Test brief generator.** Needs a docx-generation library —
-  a different pattern from every other calc here (which just render an
-  HTML print sheet), so it doesn't fit this toolkit's "one JS file, one
-  registry line" model without a bigger architectural change.
-- **Track Mat Analysis.** Needs proprietary SignaRoad (or equivalent)
-  performance data that hasn't been obtained — nothing to calculate
-  against yet.
-- **Crane Pad EKKI Mats double-skinned check.** A composite deflection
-  calculation — larger scope than a single-pass addition; needs its own
-  design pass.
-- **Unified Crane Platform (EC7).** A composite of several existing/future
-  calcs (piling mat + a crane-outrigger sub-calc + bearing + settlement)
-  — better built as an explicit "workflow" that chains the individual
-  calcs' outputs (piping values between them, extending the `_pipe`
-  pattern already in use for Wind Pressure → Heras Fencing) than as a
-  single monolithic calc.
+- **Pile cap design (strut-and-tie, BS EN 1992-1-1 §6.5, §9.8.1).** Next
+  pass. Source sheet is password-protected; method will be deduced.
+- **Pile group block failure, tension and lateral capacity.** Not covered
+  by `pile-axial-ec7` (single pile, compression only).
+- **Standalone stress distribution page.** `boussinesqRect` and `spread21`
+  exist in `js/geo-core.js`; a page can be added if wanted.
+- **Password-protected source sheets.** distrib, H-piles via SPT, Pile Cap
+  (truss), settle, Settlement and both BRE 470 piling mat copies. Deduced
+  calcs should be checked against them once the passwords are found.
+- **BS 9295:2020 Table 2 allowable surcharge values.** Entered manually in
+  `crane-outrigger-mats` until checked against the published standard.
+- **Aluminium track mat supplier data.** MRd, VRd and EI per metre must be
+  entered per job; no supplier library yet.
+
+(Done in v1.5.0: PLT brief, Track Mat, EKKI mats and Unified Crane
+Platform — all merged into `crane-outrigger-mats`.)
 
 ## Also worth knowing about (not blocking, but flagged during the build)
 

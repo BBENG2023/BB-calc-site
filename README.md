@@ -98,6 +98,29 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.5.1** — Legato abutment designer (calc v1.3.0) simplified for users.
+  New **Quick design** view (default) with five guided steps — Bridge &
+  loads, Levels, Ground, Size, Results — showing only the usual inputs.
+  The Size step has sliders for base width, courses, rear step, seat depth,
+  ballast wall, abutment length and pad thickness, with the section and the
+  worst six checks updating live. **Full detail** keeps every input. Sliders
+  added to fields with a natural range in both views. Every step has a
+  "You need" line and Back / Next buttons; tabs show a tick or warning; a
+  live PASS/FAIL chip in the toolbar names the governing check. Preset and
+  file actions moved into a File menu.
+
+- **v1.5.0** — Triage of the Original Calculation folder
+  (`docs/triage-2026-10-15.md`, specs in `docs/specs/`). Four calcs added
+  (15 in total): **1D Consolidation** (Terzaghi rate and settlement),
+  **Pile Axial Capacity — EC7 (UK NA)** (bored, CFA, driven and H-piles;
+  α, effective stress and SPT methods), **Pile Group Settlement**
+  (equivalent raft + Burland & Burbidge) and **Crane Outrigger Mats and
+  Platform** (steel/timber/aluminium/HDPE mat stack, platform and subgrade
+  bearing, buried service stress, plate load test brief). Burland &
+  Burbidge moved to `js/geo-core.js` with new Boussinesq, 2:1 and Terzaghi
+  functions; UK NA pile factors added to `js/shared-data.js`. Source-sheet
+  errors corrected, not ported (see the triage report).
+
 - **v1.4.2** — Legato abutment designer: nib interlock fixed to the BB
   basis, CLP Structures calc 302 for Elite (21.4 kN per nib, half
   effective); Elite's 32 kN sheet removed. BCB bearing layout taken from

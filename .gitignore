@@ -1,0 +1,19 @@
+# Local-only reference material for calc development — never deploy.
+# Elite Legato drawings/guide, and any BB project data (drawings, borehole
+# logs, reports) must never be committed to this repo.
+/_local-reference/
+
+# BB master calculation sheets are confidential (project numbers, client
+# names, methods). The source folder lives outside this repo; these rules
+# stop a copy ever being committed or deployed by accident.
+/Original Calc*/
+/original calc*/
+*.xls
+*.xlsx
+*.xlsm
+*.docx
+*.dwg
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
