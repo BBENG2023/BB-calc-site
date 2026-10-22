@@ -98,6 +98,15 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.6.3** — Legato abutment designer v1.4.3: **ballast wall optional**.
+  In Quick design step 5 choose None, 800 or 1200 mm; in Full detail use the
+  "Ballast wall" tick box. With none, the seat course is the top course: the
+  bearing sits at the middle of the seat, the I4a ballast-wall check and the
+  bedding grout drop out, and a warning says the approach fill above the
+  seat must be retained by the deck end, an end diaphragm or an upstand
+  (confirm with the supplier). Auto-size respects the choice. Works with a
+  single layer (seat course only on the pad).
+
 - **v1.6.2** — Legato abutment designer v1.4.2: **stagger joints along the
   face**. Every second course can be offset 400 mm or 800 mm along the
   abutment, so vertical joints no longer line up in elevation (D3b). It is

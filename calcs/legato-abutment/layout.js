@@ -20,9 +20,10 @@ export function resolveCourses(end, mode = 'bridge') {
   return A.courses.map((c, i) => {
     let role = c.role && c.role !== 'auto' ? c.role : 'base';
     if ((!c.role || c.role === 'auto') && mode === 'bridge') {
-      if (n >= 3 && i === n - 1) role = 'ballast';
-      else if (n >= 3 && i === n - 2) role = 'seat';
-      else if (n < 3 && i === n - 1) role = 'seat';
+      const noBallast = A.ballastWall === false;
+      if (!noBallast && n >= 3 && i === n - 1) role = 'ballast';
+      else if (!noBallast && n >= 3 && i === n - 2) role = 'seat';
+      else if ((noBallast || n < 3) && i === n - 1) role = 'seat';
     }
     const h = (c.height || 800) / 1000;
     const out = {

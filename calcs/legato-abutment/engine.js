@@ -235,6 +235,7 @@ export function evaluateEnd(state, endIdx, opts = {}) {
   if (ground.layers.some((l) => l.unsuitable && l.topLevel > levels.formation && l.baseLevel < levels.z0Level + 0.01)) {
     warnings.push('Unsuitable strata (topsoil, peat or made ground) within the pad depth — remove within the pad footprint and replace with compacted Type 1.');
   }
+  if (state.project.mode === 'bridge' && !layout.ballast) warnings.push(`No ballast wall: the seat course is the top course. The approach fill above the seat (to FRL) must be retained by the deck end, an end diaphragm or a separate upstand — confirm with the bridge supplier. Its earth pressure is applied on the virtual back of the abutment; the deck end clearance check against a ballast wall does not apply.`);
   if (geom.founding.unsuitable) warnings.push(`Founding stratum "${geom.founding.desc || geom.founding.cls}" is unsuitable — override with justification or found deeper.`);
   if (geom.groundFactor < 1) warnings.push(`Setback b = ${f2(geom.setback)} m < 2B — Vesic ground-inclination factor ${f3(geom.groundFactor)} applied to bearing (conservative); overall stability E5 must also pass.`);
   if (E2.legacy && E2.legacy.utilLeg > 1 && F.legacyOnly) warnings.push('Legacy sliding FoS below 1.5.');

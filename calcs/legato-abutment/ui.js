@@ -618,6 +618,15 @@ function barRow(x, u, D) {
 function familyFromCourses(A) {
   const c = A.courses;
   const n = c.length;
+  if (A.ballastWall === false && n >= 1) {
+    // No ballast wall: base courses then the seat course on top.
+    const seat = c[n - 1];
+    const B = c[0].u_rear - c[0].u_front;
+    const fam = { B, s: n > 1 ? B - seat.u_rear : 0, nBelow: n - 1, shelf: n > 1 && seat.u_front > 0 ? seat.u_rear - seat.u_front : (n > 1 ? Math.max(800, seat.u_rear - seat.u_front) : B), ballast: 0, frontStep: n > 1 && seat.u_front > 0 };
+    const regen = familyCourses({ ...fam, orient: c[0].orient });
+    const same = regen.length === n && c[0].u_front === 0 && regen.every((r, i) => r.u_front === c[i].u_front && r.u_rear === c[i].u_rear && c[i].v_start == null && c[i].v_end == null && c[i].height === 800);
+    return { ...fam, custom: !same };
+  }
   if (n === 2) {
     // Single layer: seat course on the pad with the ballast wall at its rear.
     const B = c[0].u_rear - c[0].u_front, ballast = c[1].u_rear - c[1].u_front;
@@ -660,7 +669,7 @@ function renderQuickSize(p, state, end, idx, onChange, api, live) {
   const ctrls = {};
   const sync = () => {
     Object.entries(ctrls).forEach(([k, c]) => { c.r.value = f[k]; c.out.textContent = c.fmtV(f[k]); c.r.disabled = f.nBelow === 0 && (k === 's' || k === 'shelf'); });
-    readout.textContent = f.nBelow === 0 ? `Single layer: seat course ${fmt(f.B / 1000, 1)} m deep straight on the pad, ballast wall ${f.ballast} mm at its rear.` : `${f.nBelow + 2} courses: ${f.nBelow} below the seat (base ${fmt(f.B / 1000, 1)} m${f.s ? `, stepped to ${fmt((f.B - f.s) / 1000, 1)} m above` : ''}), seat ${fmt(f.shelf / 1000, 1)} m deep, ballast wall ${f.ballast} mm.`;
+    readout.textContent = f.nBelow === 0 ? `Single layer: seat course ${fmt(f.B / 1000, 1)} m deep straight on the pad${f.ballast ? `, ballast wall ${f.ballast} mm at its rear` : ', no ballast wall'}.` : `${f.nBelow + (f.ballast ? 2 : 1)} courses: ${f.nBelow} below the seat (base ${fmt(f.B / 1000, 1)} m${f.s ? `, stepped to ${fmt((f.B - f.s) / 1000, 1)} m above` : ''}), seat ${fmt(f.shelf / 1000, 1)} m deep, ${f.ballast ? `ballast wall ${f.ballast} mm` : 'no ballast wall'}.`;
   };
   const apply = () => {
     if (f.nBelow === 0) {
@@ -671,6 +680,7 @@ function renderQuickSize(p, state, end, idx, onChange, api, live) {
     }
     f.shelf = Math.max(f.shelf, f.ballast + 800);
     if (f.B - f.s < f.shelf) f.B = Math.ceil((f.shelf + f.s) / 400) * 400;
+    A.ballastWall = f.ballast > 0;
     A.courses = familyCourses({ B: f.B, s: f.s, nBelow: f.nBelow, shelf: f.shelf, frontStep: f.frontStep, ballast: f.ballast, orient: A.courses[0]?.orient || 'Mixed' });
     A.mode = 'check';
     sync();
@@ -690,10 +700,20 @@ function renderQuickSize(p, state, end, idx, onChange, api, live) {
     grid.append(w);
   };
   slider('B', 'Base width B', 1600, Math.max(6400, A.Bmax_mm || 6400, f.B), 400, (v) => `${fmt(v / 1000, 1)} m`, 'Front to back of the bottom course.');
-  slider('nBelow', 'Courses below the seat', 0, 8, 1, (v) => (v === 0 ? 'none — single layer: seat on the pad, overall 1.6 m high' : `${v} — overall ${fmt((v + 2) * 0.8, 1)} m high`));
+  slider('nBelow', 'Courses below the seat', 0, 8, 1, (v) => (v === 0 ? 'none — single layer: seat on the pad' : `${v} — ${v + (A.ballastWall === false ? 1 : 2)} courses in all`));
   slider('s', 'Rear step above the bottom course', 0, 1600, 400, (v) => (v ? `${v} mm (fill sits on the heel)` : 'none'));
-  slider('shelf', 'Seat depth', 1600, 3200, 400, (v) => `${fmt(v / 1000, 1)} m`, 'Front-to-back depth of the seat course: ballast wall + bearing shelf (≥ 800 mm).');
-  slider('ballast', 'Ballast wall thickness', 800, 1200, 400, (v) => `${v} mm`);
+  slider('shelf', 'Seat depth', 800, 3200, 400, (v) => `${fmt(v / 1000, 1)} m`, 'Front-to-back depth of the seat course: ballast wall + bearing shelf (≥ 800 mm).');
+  // Ballast wall: none, 800 or 1200 mm (a select, as 400 mm is not an option).
+  const bw = h('div', 'field');
+  const bl = h('label', null, 'Ballast wall');
+  bl.htmlFor = 'lgq-ballast';
+  const bs = document.createElement('select');
+  bs.id = 'lgq-ballast';
+  [['0', 'None — seat course is the top course'], ['800', '800 mm (one row)'], ['1200', '1200 mm']].forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; bs.append(o); });
+  bs.value = String(A.ballastWall === false ? 0 : f.ballast || 800);
+  bs.addEventListener('change', () => { f.ballast = Number(bs.value); A.ballastWall = f.ballast > 0; apply(); onChange(true); });
+  bw.append(bl, bs, h('div', 'field-help', 'Without a ballast wall the approach fill above the seat must be retained by the deck end, an end diaphragm or a separate upstand — confirm with the bridge supplier.'));
+  grid.append(bw);
 
   const lw = h('div', 'field field-slider');
   const ll = h('label', null, 'Abutment length L (along the face) <output class="lg-val"></output>');

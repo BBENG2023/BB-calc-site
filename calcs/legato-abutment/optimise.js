@@ -11,15 +11,17 @@ import { evaluateEnd } from './engine.js';
 export function familyCourses({ B, s, nBelow, shelf, frontStep, ballast = 800, orient = 'Mixed' }) {
   // nBelow = 0: a single layer — the seat course sits straight on the pad,
   // full base width, with the ballast wall at its rear.
+  // ballast = 0: no ballast wall — the seat course is the top course.
   if (nBelow === 0) {
-    return [newCourse({ u_front: 0, u_rear: B, orient, role: 'seat' }), newCourse({ u_front: B - ballast, u_rear: B, orient, role: 'ballast' })];
+    const seat = newCourse({ u_front: 0, u_rear: B, orient, role: 'seat' });
+    return ballast > 0 ? [seat, newCourse({ u_front: B - ballast, u_rear: B, orient, role: 'ballast' })] : [seat];
   }
   const upperRear = B - s;
   const courses = [];
   for (let i = 0; i < nBelow; i++) courses.push(newCourse({ u_front: 0, u_rear: i === 0 ? B : upperRear, orient, role: 'base' }));
   const seatFront = frontStep ? Math.max(0, upperRear - shelf) : 0;
   courses.push(newCourse({ u_front: seatFront, u_rear: upperRear, orient, role: 'seat' }));
-  courses.push(newCourse({ u_front: upperRear - ballast, u_rear: upperRear, orient, role: 'ballast' }));
+  if (ballast > 0) courses.push(newCourse({ u_front: upperRear - ballast, u_rear: upperRear, orient, role: 'ballast' }));
   return courses;
 }
 
@@ -58,8 +60,8 @@ export function* autoSizeSteps(state0, endIdx) {
   // Ballast wall 800 (one row) or 1200 (heavier, for larger surcharge); the
   // seat is then at least ballast + 800 deep to leave a bearing shelf.
   const cands = [];
-  [800, 1200].forEach((ballast) => {
-    const sh = Math.max(shelf, ballast + 800);
+  (A.ballastWall === false ? [0] : [800, 1200]).forEach((ballast) => {
+    const sh = Math.max(ballast ? shelf : 800, ballast + 800);
     for (let B = Math.max(1600, sh); B <= Bmax; B += 400) {
       steps.forEach((s) => {
         if (B - s < sh) return;
@@ -90,7 +92,7 @@ export function* autoSizeSteps(state0, endIdx) {
     why = smaller
       ? `B = ${chosen.B} mm chosen: the next smaller base (B = ${smaller.B} mm) fails ${smaller.worst ? `${smaller.worst.id} ${smaller.worst.title} (utilisation ${smaller.worst.util.toFixed(3)})` : smaller.errors[0] || 'the levels solver'}.`
       : `B = ${chosen.B} mm is the smallest base width in the search range; governing check ${chosen.worst?.id} ${chosen.worst?.title} at ${chosen.worst?.util.toFixed(3)}.`;
-    why += ` ${chosen.nBelow} course(s) below the seat; ballast wall ${chosen.ballast} mm; seat ${chosen.shelf} mm deep.`;
+    why += ` ${chosen.nBelow} course(s) below the seat; ${chosen.ballast ? `ballast wall ${chosen.ballast} mm` : 'no ballast wall'}; seat ${chosen.shelf} mm deep.`;
     if (chosen.s) why += ` Rear step ${chosen.s} mm (fill on the heel).`;
     if (chosen.setback) why += ` Extra setback ${chosen.setback} m.`;
   } else {

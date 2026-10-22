@@ -133,7 +133,7 @@ export function checkLocal(ctx, layout) {
   });
 
   // L4 grout thickness limits.
-  const bed = A.groutBed || 0, bg = A.bearingGrout || 0;
+  const bed = layout.ballast ? A.groutBed || 0 : 0, bg = A.bearingGrout || 0;
   const u4 = Math.max(bed / 110, bg / 20);
   out.push({
     id: 'L4', title: 'Grout thickness limits', clause: 'BB default limits; manufacturer data', util: u4, pass: u4 <= 1,

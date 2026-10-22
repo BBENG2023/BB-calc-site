@@ -126,7 +126,7 @@ export default {
   title: 'Bridge Abutment — Legato Interlocking Block (Bank Seat)',
   category: 'Bridge Substructures — Precast Block Abutments',
   tag: 'EC7 DA1 · Legato',
-  version: '1.4.2',
+  version: '1.4.3',
   schemaVersion: SCHEMA_VERSION,
   debounceMs: 250,
   references: [
@@ -446,6 +446,26 @@ export default {
           return { values: v };
         },
         expect: { tiled_0: { value: 1, tol: 0 }, tiled_400: { value: 1, tol: 0 }, tiled_800: { value: 1, tol: 0 }, shared_400: { value: 0, tol: 0 } },
+      },
+      {
+        name: 'No ballast wall: seat course is the top course (2 base courses + seat), no I4a ballast check, no bedding grout, bearing at the middle of the seat; also as a single layer (seat only on the pad)',
+        inputs: {},
+        run: () => {
+          const s = bbStandard();
+          s.ends[0].arrangement.ballastWall = false;
+          s.ends[0].arrangement.courses = familyCourses({ B: 3200, s: 0, nBelow: 2, shelf: 2400, frontStep: true, ballast: 0 });
+          const e = evaluate(s).ends[0];
+          const s1 = bbStandard();
+          s1.ends[0].arrangement.ballastWall = false;
+          s1.ends[0].arrangement.courses = familyCourses({ B: 2400, s: 0, nBelow: 0, shelf: 2400, frontStep: false, ballast: 0 });
+          const e1 = evaluate(s1).ends[0];
+          return { values: {
+            courses: e.layout.n, ballast: e.layout.ballast ? 1 : 0, seatTop: e.layout.seat.idx === e.layout.n ? 1 : 0,
+            I4a: e.I4.some((x) => x.id === 'I4a') ? 1 : 0, bearingU: e.geom.bearing.u - (e.layout.seat.u0 + e.layout.seat.u1) / 2,
+            single_courses: e1.layout.n, single_seat: e1.layout.seat?.idx ?? 0,
+          } };
+        },
+        expect: { courses: { value: 3, tol: 0 }, ballast: { value: 0, tol: 0 }, seatTop: { value: 1, tol: 0 }, I4a: { value: 0, tol: 0 }, bearingU: { value: 0, tol: 1e-9 }, single_courses: { value: 1, tol: 0 }, single_seat: { value: 1, tol: 0 } },
       },
       {
         name: 'Unit — reaction units: R1 schedule entered in tonnes (values ÷ 9.81) gives the same kN loads',

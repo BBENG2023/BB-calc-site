@@ -98,6 +98,8 @@ export function newEnd(n) {
       shelf_mm: 1600,
       // Joint stagger along the face on every second course (mm): 0, 400 or 800.
       staggerV: 0,
+      // Ballast wall on the rear of the seat course (optional).
+      ballastWall: true,
       maxSetback: 0,
       wings: { on: false, length_mm: 1600, courses: 2 },
       courses: [
@@ -433,6 +435,7 @@ export const FIELDS = {
   arrangement: [
     { path: 'arrangement.mode', label: 'Mode', type: 'select', options: [['check', 'Check (designer defines courses)'], ['auto', 'Auto-size (tool proposes courses)']] },
     { path: 'arrangement.L_mm', label: 'Transverse length L', unit: 'mm', min: 400, step: 400, help: 'Default = roundUp400(bearing c/c + plate width + 2 × 350 mm).' },
+    { path: 'arrangement.ballastWall', label: 'Ballast wall on the rear of the seat', type: 'checkbox', help: 'Untick for no ballast wall: the seat course is the top course and the approach fill above it must be retained by the deck end, an end diaphragm or a separate upstand (confirm with the bridge supplier). In the course table remove any course with the role "Ballast wall".' },
     { path: 'arrangement.staggerV', label: 'Stagger joints along the face (every second course)', type: 'select', numeric: true, options: [[0, 'None — joints line up'], [400, '400 mm (half a short block)'], [800, '800 mm (half bond on 1600 blocks)']], help: 'Offsets the block joints along the abutment on alternate courses so vertical joints do not line up in elevation (see D3b). 400 mm staggers both bond rows; 800 mm staggers the 1600 mm rows only.' },
     { path: 'arrangement.Bmax_mm', label: 'Max base width (auto-size)', unit: 'mm', min: 1600, step: 400, showIf: (s, e) => e.arrangement.mode === 'auto' },
     { path: 'arrangement.shelf_mm', label: 'Seat course depth (auto-size)', unit: 'mm', min: 1200, step: 400, showIf: (s, e) => e.arrangement.mode === 'auto' },
@@ -445,7 +448,7 @@ export const FIELDS = {
     { path: 'arrangement.pad.overhangRear', label: 'Pad overhang — rear', unit: 'mm', min: 0, step: 50 },
     { path: 'arrangement.pad.material', label: 'Pad material', type: 'select', options: [['Type 1 (SHW 803)', 'Type 1 sub-base (SHW 803)'], ['Mass concrete', 'Mass concrete']] },
     { path: 'arrangement.pad.gamma', label: 'Pad γ', unit: 'kN/m³', min: 15, step: 0.5 },
-    { path: 'arrangement.groutBed', label: 'Bedding grout under ballast wall', unit: 'mm', min: 0, max: 200, step: 5 },
+    { path: 'arrangement.groutBed', label: 'Bedding grout under ballast wall', unit: 'mm', min: 0, max: 200, step: 5, showIf: (s, e) => e.arrangement.ballastWall !== false },
     { path: 'arrangement.bearingGrout', label: 'Bearing grout pad', unit: 'mm', min: 0, max: 50, step: 1 },
     { path: 'arrangement.bearingU_mm', label: 'Bearing centre u (from front face)', unit: 'mm', min: 0, step: 50, nullable: true, bridgeOnly: true, help: 'Blank = centre of the exposed seat.' },
     { path: 'arrangement.anchors.perPlate', label: 'Anchors per baseplate', min: 2, step: 2, bridgeOnly: true },
