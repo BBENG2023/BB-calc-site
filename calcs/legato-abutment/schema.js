@@ -96,6 +96,8 @@ export function newEnd(n) {
       rearStep: true,
       frontStepAtShelf: true,
       shelf_mm: 1600,
+      // Joint stagger along the face on every second course (mm): 0, 400 or 800.
+      staggerV: 0,
       maxSetback: 0,
       wings: { on: false, length_mm: 1600, courses: 2 },
       courses: [
@@ -431,6 +433,7 @@ export const FIELDS = {
   arrangement: [
     { path: 'arrangement.mode', label: 'Mode', type: 'select', options: [['check', 'Check (designer defines courses)'], ['auto', 'Auto-size (tool proposes courses)']] },
     { path: 'arrangement.L_mm', label: 'Transverse length L', unit: 'mm', min: 400, step: 400, help: 'Default = roundUp400(bearing c/c + plate width + 2 × 350 mm).' },
+    { path: 'arrangement.staggerV', label: 'Stagger joints along the face (every second course)', type: 'select', numeric: true, options: [[0, 'None — joints line up'], [400, '400 mm (half a short block)'], [800, '800 mm (half bond on 1600 blocks)']], help: 'Offsets the block joints along the abutment on alternate courses so vertical joints do not line up in elevation (see D3b). 400 mm staggers both bond rows; 800 mm staggers the 1600 mm rows only.' },
     { path: 'arrangement.Bmax_mm', label: 'Max base width (auto-size)', unit: 'mm', min: 1600, step: 400, showIf: (s, e) => e.arrangement.mode === 'auto' },
     { path: 'arrangement.shelf_mm', label: 'Seat course depth (auto-size)', unit: 'mm', min: 1200, step: 400, showIf: (s, e) => e.arrangement.mode === 'auto' },
     { path: 'arrangement.rearStep', label: 'Allow rear steps (fill on heel)', type: 'checkbox', showIf: (s, e) => e.arrangement.mode === 'auto' },

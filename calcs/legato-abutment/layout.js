@@ -30,6 +30,9 @@ export function resolveCourses(end, mode = 'bridge') {
       v0: (c.v_start ?? 0) / 1000, v1: (c.v_end ?? A.L_mm) / 1000,
       z0: z, z1: z + h, h, h_mm: c.height || 800, orient: c.orient || 'T', role,
       typeRule: c.typeRule || 'auto', special: !!c.special, temporary: !!c.temporary, raw: c,
+      // Joint offset along the face (mm): the course's own value, or the
+      // arrangement stagger on every second course.
+      vStagger: c.vStagger !== null && c.vStagger !== undefined && c.vStagger !== '' && c.vStagger !== 'auto' ? Number(c.vStagger) : (i % 2 ? Number(A.staggerV) || 0 : 0),
     };
     if (out.v1 > L + 1e-9) out.v1 = L;
     z += h;
@@ -83,6 +86,7 @@ function depthBands(depth, orient, k) {
 export function tileCourse(c, k) {
   const pieces = [];
   const errors = [];
+  const notes = [];
   const U0 = Math.round(c.u0 * 1000), U1 = Math.round(c.u1 * 1000);
   const V0 = Math.round(c.v0 * 1000), V1 = Math.round(c.v1 * 1000);
   const depth = U1 - U0, len = V1 - V0;
@@ -97,8 +101,9 @@ export function tileCourse(c, k) {
   });
 
   depthBands(depth, c.orient || 'Mixed', k).forEach((band, r) => {
+    const vOff = (Number(c.vStagger) || 0) % 1600;
     if (band.kind === 'T') {
-      const off = c.orient === 'T' && (k + r) % 2 ? 800 : 0;
+      const off = ((c.orient === 'T' && (k + r) % 2 ? 800 : 0) + vOff) % 1600;
       let p = 0;
       splitLengths(len, off).forEach((s) => { add(band.a0, band.a0 + 800, p, p + s, s, 'v', r); p += s; });
     } else if (band.kind === 'T400') {
@@ -109,8 +114,12 @@ export function tileCourse(c, k) {
       // L band: 800-wide strips along v, each tiled along u.
       let q = 0;
       let strip = 0;
+      // 400 → a 400-wide first and last strip stagger the strip joints; only
+      // possible where the band depth is a multiple of 800 (no 400 × 400 block).
+      const first = vOff % 800 && band.d % 800 === 0 ? vOff % 800 : 0;
+      if (vOff % 800 && !first) notes.push(`Course ${c.idx}: the ${band.d} mm deep band cannot take a 400 mm stagger (would need 400 × 400 blocks) — not staggered.`);
       while (len - q > 0) {
-        const w = len - q >= 800 ? 800 : 400;
+        const w = q === 0 && first && len > first ? first : len - q >= 800 ? 800 : 400;
         if (w === 800) {
           const off = band.d > 1600 && (k + strip) % 2 ? 800 : 0;
           let p = 0;
@@ -125,7 +134,7 @@ export function tileCourse(c, k) {
       }
     }
   });
-  return { pieces, errors, grid: true };
+  return { pieces, errors, notes, grid: true };
 }
 
 const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
@@ -157,6 +166,7 @@ export function buildLayout(state, endIdx) {
   const tiles = courses.map((c, k) => {
     const t = tileCourse(c, k);
     errors.push(...t.errors);
+    warnings.push(...(t.notes || []));
     return t;
   });
   const gridOK = tiles.every((t) => t.grid !== false && !t.errors.length);

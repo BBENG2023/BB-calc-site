@@ -729,6 +729,8 @@ function renderQuickSize(p, state, end, idx, onChange, api, live) {
 
   const fsS = h('fieldset', 'lg-fieldset');
   fsS.append(h('legend', null, `${label} — arrangement`));
+  const stag = field(FIELDS.arrangement.find((d) => d.path === 'arrangement.staggerV'), end, state, end, onChange);
+  if (stag) grid.append(stag);
   fsS.append(grid, readout);
   sync();
   p.append(fsS);
@@ -1350,6 +1352,7 @@ function renderArrangement(p, state, end, idx, onChange, api) {
       { key: 'v_start', label: 'v start', type: 'number', unit: 'mm', step: 400, nullable: true }, { key: 'v_end', label: 'v end', type: 'number', unit: 'mm', step: 400, nullable: true },
       { key: 'orient', label: 'Bond', type: 'select', options: [['Mixed', 'Mixed (L + T)'], ['T', 'T (transverse)'], ['L', 'L (longitudinal)']] },
       { key: 'height', label: 'H', type: 'number', unit: 'mm', step: 10 },
+      { key: 'vStagger', label: 'Stagger along face', type: 'select', options: [['', 'Auto'], ['0', 'None'], ['400', '400'], ['800', '800']] },
       { key: 'role', label: 'Role', type: 'select', options: [['auto', 'Auto'], ['base', 'Base'], ['seat', 'Seat'], ['ballast', 'Ballast wall']] },
       { key: 'typeRule', label: 'Block type', type: 'select', options: [['auto', 'Auto rule'], ['female', 'Female only'], ['male', 'Male + female']] },
       { key: 'special', label: 'Special', type: 'checkbox' }, { key: 'temporary', label: 'Temporary', type: 'checkbox' },

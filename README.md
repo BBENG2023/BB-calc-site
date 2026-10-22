@@ -98,6 +98,13 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.6.2** — Legato abutment designer v1.4.2: **stagger joints along the
+  face**. Every second course can be offset 400 mm or 800 mm along the
+  abutment, so vertical joints no longer line up in elevation (D3b). It is
+  set in Quick design step 5 or in the course table (per course). Only
+  Legato lengths are used; a 400 mm stagger is skipped, with a note, where a
+  band would need 400 × 400 blocks. Bond-based load spread benefits directly.
+
 - **v1.6.1** — Legato abutment designer v1.4.1:
   - **Bearings follow the bearing centres.** Positions are shown, not typed;
     fixity can be set per bearing.

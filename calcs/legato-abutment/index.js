@@ -126,7 +126,7 @@ export default {
   title: 'Bridge Abutment — Legato Interlocking Block (Bank Seat)',
   category: 'Bridge Substructures — Precast Block Abutments',
   tag: 'EC7 DA1 · Legato',
-  version: '1.4.1',
+  version: '1.4.2',
   schemaVersion: SCHEMA_VERSION,
   debounceMs: 250,
   references: [
@@ -428,6 +428,24 @@ export default {
           return { values: { courses: e.layout.n, tiled: e.layout.gridOK ? 1 : 0, seatIdx: e.layout.seat.idx, drop: Number(s.ends[0].seatLevel) - e.levels.formation - e.levels.padThk } };
         },
         expect: { courses: { value: 2, tol: 0 }, tiled: { value: 1, tol: 0 }, seatIdx: { value: 1, tol: 0 }, drop: { value: 0.8, tol: 0.001 } },
+      },
+      {
+        name: 'Stagger along the face: 400 mm and 800 mm offsets on every second course tile with Legato lengths only and move the front-face joints of course 2 off those of course 1',
+        inputs: {},
+        run: () => {
+          const v = {};
+          [0, 400, 800].forEach((st) => {
+            const s = bbStandard();
+            s.ends[0].arrangement.staggerV = st;
+            const lay = evaluate(s).ends[0].layout;
+            const front = (c) => { const u0 = Math.min(...c.pieces.map((p) => p.u0)); return new Set(c.pieces.filter((p) => Math.abs(p.u0 - u0) < 1e-6).map((p) => p.v1.toFixed(3)).filter((x) => Number(x) < c.v1 - 1e-6)); };
+            const j1 = front(lay.courses[0]), j2 = front(lay.courses[1]);
+            v[`tiled_${st}`] = lay.gridOK ? 1 : 0;
+            v[`shared_${st}`] = [...j2].filter((x) => j1.has(x)).length;
+          });
+          return { values: v };
+        },
+        expect: { tiled_0: { value: 1, tol: 0 }, tiled_400: { value: 1, tol: 0 }, tiled_800: { value: 1, tol: 0 }, shared_400: { value: 0, tol: 0 } },
       },
       {
         name: 'Unit — reaction units: R1 schedule entered in tonnes (values ÷ 9.81) gives the same kN loads',
