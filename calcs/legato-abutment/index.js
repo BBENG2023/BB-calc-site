@@ -11,6 +11,7 @@ import { diagramD2 } from './drawings.js';
 import { burlandBurbidge } from './settlement.js';
 import { searchCircles } from './slope.js';
 import { buildLayout, solveLevels, resolveCourses } from './layout.js';
+import { familyCourses } from './optimise.js';
 import { rotateToAbutment, earthCoefficient, normaliseLoads } from './actions.js';
 import { parseSPT, n60, overburdenCN, phiPHT, phiHatanaka, cuStroud } from '../../js/geo-core.js';
 import { LEGATO_BLOCKS, legatoVolume } from '../../js/shared-data.js';
@@ -125,7 +126,7 @@ export default {
   title: 'Bridge Abutment — Legato Interlocking Block (Bank Seat)',
   category: 'Bridge Substructures — Precast Block Abutments',
   tag: 'EC7 DA1 · Legato',
-  version: '1.4.0',
+  version: '1.4.1',
   schemaVersion: SCHEMA_VERSION,
   debounceMs: 250,
   references: [
@@ -399,6 +400,34 @@ export default {
           } };
         },
         expect: { dE2: { value: 0, tol: 1e-9 }, rejected: { value: 1, tol: 0 }, limit2: { value: 25, tol: 0 }, blocked: { value: 1, tol: 0 }, x3: { value: 1, tol: 0 }, pass2: { value: 0, tol: 0 } },
+      },
+      {
+        name: 'Bearing plates on one block ≥ 100 mm from its edges (L6): R1 has 3.0 m bearing centres, so auto placement slides the group 400 mm off centre to give exactly 100 mm; centred placement leaves the plates across joints (L6 fails)',
+        inputs: {},
+        run: () => {
+          const a = evaluate(r1TwoBearing()).ends[0];
+          const s = r1TwoBearing(); s.ends[0].bearingPlacement = 'centre';
+          const b = evaluate(s).ends[0];
+          return { values: {
+            minClear_auto: Math.min(...a.geom.bearings.map((x) => x.clearance)) * 1000,
+            offset_auto: a.geom.bearings[0].groupOffset * 1000,
+            centres: (a.geom.bearings[1].v - a.geom.bearings[0].v) * 1000,
+            L6_auto_pass: a.local.find((l) => l.id === 'L6').pass ? 1 : 0,
+            L6_centre_pass: b.local.find((l) => l.id === 'L6').pass ? 1 : 0,
+          } };
+        },
+        expect: { minClear_auto: { value: 100, tol: 0.5 }, offset_auto: { value: 400, tol: 0.5 }, centres: { value: 3000, tol: 0.5 }, L6_auto_pass: { value: 1, tol: 0 }, L6_centre_pass: { value: 0, tol: 0 } },
+      },
+      {
+        name: 'Single layer: seat course straight on the pad with the ballast wall (2 courses) evaluates and tiles; formation = seat level − 0.8 m − pad',
+        inputs: {},
+        run: () => {
+          const s = bbStandard();
+          s.ends[0].arrangement.courses = familyCourses({ B: 2400, s: 0, nBelow: 0, shelf: 2400, frontStep: false, ballast: 800 });
+          const e = evaluate(s).ends[0];
+          return { values: { courses: e.layout.n, tiled: e.layout.gridOK ? 1 : 0, seatIdx: e.layout.seat.idx, drop: Number(s.ends[0].seatLevel) - e.levels.formation - e.levels.padThk } };
+        },
+        expect: { courses: { value: 2, tol: 0 }, tiled: { value: 1, tol: 0 }, seatIdx: { value: 1, tol: 0 }, drop: { value: 0.8, tol: 0.001 } },
       },
       {
         name: 'Unit — reaction units: R1 schedule entered in tonnes (values ÷ 9.81) gives the same kN loads',

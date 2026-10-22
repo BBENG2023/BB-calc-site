@@ -618,3 +618,4 @@ a.pipe-link:hover {
 .lg-okline { color: var(--bb-ok); font-weight: 700; }
 .lg-h3 { font-size: 1rem; margin: 1.2rem 0 0.4rem; color: var(--bb-primary); }
 .lg-strip .lg-delta.up, .lg-strip .lg-delta.down { color: #fff; }
+.lg-good { color: var(--bb-ok); font-weight: 700; }

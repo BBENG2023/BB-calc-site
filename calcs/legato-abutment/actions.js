@@ -55,19 +55,60 @@ export function normaliseLoads(state) {
 
 // Bearings at one end: position along the face v (m) and fixity. Blank v =
 // symmetric at the bearing centres; blank fixity = from the "fixed end" input.
-export function endBearings(state, endIdx, L, u) {
+// Minimum clearance from the edge of a bearing plate to the edge of the seat
+// block it sits on (BB requirement: plate wholly on one block, ≥ 100 mm in).
+export const PLATE_EDGE_MIN = 0.1;
+
+// Clearance of one plate (centre u, v; Lp along u, Bp along v) on the seat
+// course: the largest inset of the plate within a single block, or a
+// negative value when no single block carries the whole plate.
+export function plateClearance(seat, u, v, Lp, Bp) {
+  let best = -Infinity, piece = null;
+  (seat?.pieces || []).forEach((p) => {
+    const c = Math.min(u - Lp / 2 - p.u0, p.u1 - (u + Lp / 2), v - Bp / 2 - p.v0, p.v1 - (v + Bp / 2));
+    if (c > best) { best = c; piece = p; }
+  });
+  return { clearance: best, piece };
+}
+
+// Bearings at one end. Positions follow the bearing centres, symmetric about
+// the group centre; fixity from the per-bearing setting or the fixed end.
+// Group centre: 'centre' = abutment centre; 'user' = centre + offset; 'auto'
+// (default) = slid along the face in 50 mm steps, nearest the centre, to the
+// first position where every plate is ≥ 100 mm inside one seat block.
+export function endBearings(state, endIdx, L, u, seat = null) {
   const P = state.project;
+  const end = state.ends[endIdx];
   const nb = Math.max(1, Number(P.bearingsPerEnd) || 1);
   const c = Number(P.bearingCentres) || 0;
   const fe = Number(P.fixedEnd);
   const defFix = fe === 0 || fe === endIdx + 1 ? 'fixed' : 'free';
-  const set = state.ends[endIdx].bearings || [];
+  const set = end.bearings || [];
+  const Lp = (Number(P.bearingPlateL) || 300) / 1000;
+  const Bp = (Number(P.bearingPlateB) || 400) / 1000;
+  const mode = end.bearingPlacement || 'auto';
+  const offs = (k) => (k - (nb - 1) / 2) * c;
+  const minClear = (vc) => Math.min(...Array.from({ length: nb }, (_, k) => plateClearance(seat, u, vc + offs(k), Lp, Bp).clearance));
+  let vc = L / 2, placement = 'centre';
+  if (mode === 'user') { vc = L / 2 + (Number(end.bearingOffset_mm) || 0) / 1000; placement = 'user'; }
+  else if (mode === 'auto' && seat?.pieces?.length) {
+    const cands = [];
+    for (let d = 0; d <= 1.6 + 1e-9; d += 0.05) { cands.push(L / 2 + d); if (d) cands.push(L / 2 - d); }
+    const inside = (x) => x + offs(0) - Bp / 2 >= -1e-9 && x + offs(nb - 1) + Bp / 2 <= L + 1e-9;
+    const ok = cands.filter(inside);
+    const hit = ok.find((x) => minClear(x) >= PLATE_EDGE_MIN - 1e-9);
+    if (hit !== undefined) { vc = hit; placement = 'auto'; }
+    else {
+      const bestX = ok.reduce((m, x) => (m === null || minClear(x) > minClear(m) ? x : m), null);
+      vc = bestX ?? L / 2; placement = 'auto-failed';
+    }
+  }
   const out = [];
   for (let k = 0; k < nb; k++) {
-    const s = set[k] || {};
-    const auto = L / 2 + (k - (nb - 1) / 2) * c;
-    const hasV = s.v_mm !== null && s.v_mm !== undefined && s.v_mm !== '' && Number.isFinite(Number(s.v_mm));
-    out.push({ k, u, v: hasV ? Number(s.v_mm) / 1000 : auto, fixity: ['fixed', 'guided', 'free'].includes(s.fixity) ? s.fixity : defFix, autoV: !hasV });
+    const s0 = set[k] || {};
+    const v = vc + offs(k);
+    const cl = seat ? plateClearance(seat, u, v, Lp, Bp).clearance : null;
+    out.push({ k, u, v, fixity: ['fixed', 'guided', 'free'].includes(s0.fixity) ? s0.fixity : defFix, autoV: placement !== 'user', placement, groupOffset: vc - L / 2, clearance: cl });
   }
   return out;
 }

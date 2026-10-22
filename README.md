@@ -98,6 +98,18 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.6.1** — Legato abutment designer v1.4.1:
+  - **Bearings follow the bearing centres.** Positions are shown, not typed;
+    fixity can be set per bearing.
+  - **Bearing group placement.** By default it slides along the abutment in
+    50 mm steps, nearest the centre, so every bearing plate sits wholly on
+    one seat block at least 100 mm from its edges. It can also be centred or
+    given a user offset.
+  - **New check L6 (plate on one block, ≥ 100 mm).** It fails when no
+    position works.
+  - **Single layer.** The seat course can sit straight on the pad, with no
+    courses below it; auto-size may choose this.
+
 - **v1.6.0** — Legato abutment designer **v1.4.0**: fixes from a live check,
   and a local load path through the blocks.
   - **Loads:**

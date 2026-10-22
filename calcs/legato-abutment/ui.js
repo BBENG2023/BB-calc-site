@@ -242,6 +242,7 @@ const SLIDERS = {
   'project.dMin': [0, 1.5, 0.05],
   'project.skew': [0, 45, 0.5],
   'project.slidingMu': [0, 0.5, 0.01],
+  'project.bearingCentres': [0.6, 6, 0.05],
   'loads.surcharge': [0, 30, 0.5],
   'loads.surchargePsi0': [0, 1, 0.05],
   'loads.surchargeSetback': [0, 5, 0.1],
@@ -386,7 +387,7 @@ export function customUI(container, state, api) {
   const T = [];
   if (quick) {
     T.push({ key: 'q-project', label: '1 Project', need: 'You need: the project number and title, and who is designing it.', render: (p) => renderQuickProject(p, state, onChange, api) });
-    T.push({ key: 'q-bridge', label: '2 Bridge & bearings', need: bridgeMode(state) ? 'You need: the bridge type and span, and the bearing layout and fixity from the supplier’s GA.' : 'Retaining-wall mode — no bridge.', render: (p) => renderQuickBridge(p, state, onChange, api) });
+    T.push({ key: 'q-bridge', label: '2 Bridge & bearings', need: bridgeMode(state) ? 'You need: the bridge type and span, and the bearing layout and fixity from the supplier’s GA.' : 'Retaining-wall mode — no bridge.', render: (p) => renderQuickBridge(p, state, onChange, api, live) });
     T.push({ key: 'q-loads', label: '3 Loads', need: 'You need: the supplier’s reaction schedule (check its units), the load model and the approach surcharge.', render: (p) => renderQuickLoads(p, state, onChange, api) });
     T.push({ key: 'q-ground', label: '4 Ground', need: 'You need: seat and road levels, ground and water levels (GA, topographic survey, flood study) and the borehole logs.', render: (p) => renderQuickGround(p, state, E(), activeEnd(), onChange, api, live) });
     T.push({ key: 'q-size', label: '5 Arrangement', need: 'Press Auto-size, or drag the sliders. The section, the load path and the checks update as you go.', render: (p) => renderQuickSize(p, state, E(), activeEnd(), onChange, api, live) });
@@ -508,16 +509,16 @@ function renderQuickProject(p, state, onChange, api) {
 }
 
 // Step 2 — bridge, geometry and bearings.
-function renderQuickBridge(p, state, onChange, api) {
+function renderQuickBridge(p, state, onChange, api, live) {
   if (!bridgeMode(state)) { p.append(h('p', 'field-help', 'Retaining-wall mode: no bridge. Go to Loads.')); return; }
   p.append(renderBridgeLibrary(state, onChange, api));
   const det = h('details', 'lg-more');
   det.open = !usingLibrary(state);
   det.append(h('summary', null, usingLibrary(state) ? 'Bridge geometry — set from the standard bridge (open to adjust)' : 'Bridge geometry'));
-  det.append(fieldset('Bridge geometry', pick(FIELDS.project, ['project.span', 'project.deckWidth', 'project.bearingsPerEnd', 'project.bearingCentres', 'project.bearingPlateL', 'project.bearingPlateB', 'project.bearingHeight', 'project.skew']), state, state, null, onChange));
+  det.append(fieldset('Bridge geometry', pick(FIELDS.project, ['project.span', 'project.deckWidth', 'project.bearingHeight', 'project.skew']), state, state, null, onChange));
   p.append(det);
   p.append(fieldset('Fixity', pick(FIELDS.project, ['project.fixedEnd', 'project.slidingMu']), state, state, null, onChange));
-  renderBearings(p, state, onChange);
+  renderBearings(p, state, onChange, api, live);
   if (bothEndsFixed(state)) p.append(renderThermalRestraint(state, onChange));
 }
 
@@ -617,6 +618,12 @@ function barRow(x, u, D) {
 function familyFromCourses(A) {
   const c = A.courses;
   const n = c.length;
+  if (n === 2) {
+    // Single layer: seat course on the pad with the ballast wall at its rear.
+    const B = c[0].u_rear - c[0].u_front, ballast = c[1].u_rear - c[1].u_front;
+    const same = c[0].u_front === 0 && c[1].u_rear === c[0].u_rear && c.every((x) => x.v_start == null && x.v_end == null && x.height === 800);
+    return { B, s: 0, nBelow: 0, shelf: B, ballast, frontStep: false, custom: !same };
+  }
   if (n < 3) return { B: Math.max(1600, (c[0]?.u_rear ?? 2400) - (c[0]?.u_front ?? 0)), s: 0, nBelow: 1, shelf: 1600, ballast: 800, frontStep: true, custom: true };
   const seat = c[n - 2], bal = c[n - 1];
   const B = c[0].u_rear - c[0].u_front;
@@ -652,10 +659,16 @@ function renderQuickSize(p, state, end, idx, onChange, api, live) {
   const readout = h('p', 'lg-readout');
   const ctrls = {};
   const sync = () => {
-    Object.entries(ctrls).forEach(([k, c]) => { c.r.value = f[k]; c.out.textContent = c.fmtV(f[k]); });
-    readout.textContent = `${f.nBelow + 2} courses: ${f.nBelow} below the seat (base ${fmt(f.B / 1000, 1)} m${f.s ? `, stepped to ${fmt((f.B - f.s) / 1000, 1)} m above` : ''}), seat ${fmt(f.shelf / 1000, 1)} m deep, ballast wall ${f.ballast} mm.`;
+    Object.entries(ctrls).forEach(([k, c]) => { c.r.value = f[k]; c.out.textContent = c.fmtV(f[k]); c.r.disabled = f.nBelow === 0 && (k === 's' || k === 'shelf'); });
+    readout.textContent = f.nBelow === 0 ? `Single layer: seat course ${fmt(f.B / 1000, 1)} m deep straight on the pad, ballast wall ${f.ballast} mm at its rear.` : `${f.nBelow + 2} courses: ${f.nBelow} below the seat (base ${fmt(f.B / 1000, 1)} m${f.s ? `, stepped to ${fmt((f.B - f.s) / 1000, 1)} m above` : ''}), seat ${fmt(f.shelf / 1000, 1)} m deep, ballast wall ${f.ballast} mm.`;
   };
   const apply = () => {
+    if (f.nBelow === 0) {
+      // Single layer: the seat is the full base; no rear step.
+      f.s = 0;
+      f.B = Math.max(f.B, f.ballast + 800);
+      f.shelf = f.B;
+    }
     f.shelf = Math.max(f.shelf, f.ballast + 800);
     if (f.B - f.s < f.shelf) f.B = Math.ceil((f.shelf + f.s) / 400) * 400;
     A.courses = familyCourses({ B: f.B, s: f.s, nBelow: f.nBelow, shelf: f.shelf, frontStep: f.frontStep, ballast: f.ballast, orient: A.courses[0]?.orient || 'Mixed' });
@@ -677,7 +690,7 @@ function renderQuickSize(p, state, end, idx, onChange, api, live) {
     grid.append(w);
   };
   slider('B', 'Base width B', 1600, Math.max(6400, A.Bmax_mm || 6400, f.B), 400, (v) => `${fmt(v / 1000, 1)} m`, 'Front to back of the bottom course.');
-  slider('nBelow', 'Courses below the seat', 1, 8, 1, (v) => `${v} — overall ${fmt((v + 2) * 0.8, 1)} m high`);
+  slider('nBelow', 'Courses below the seat', 0, 8, 1, (v) => (v === 0 ? 'none — single layer: seat on the pad, overall 1.6 m high' : `${v} — overall ${fmt((v + 2) * 0.8, 1)} m high`));
   slider('s', 'Rear step above the bottom course', 0, 1600, 400, (v) => (v ? `${v} mm (fill sits on the heel)` : 'none'));
   slider('shelf', 'Seat depth', 1600, 3200, 400, (v) => `${fmt(v / 1000, 1)} m`, 'Front-to-back depth of the seat course: ballast wall + bearing shelf (≥ 800 mm).');
   slider('ballast', 'Ballast wall thickness', 800, 1200, 400, (v) => `${v} mm`);
@@ -802,7 +815,7 @@ function renderProject(p, state, onChange) {
     det.append(h('summary', null, usingLibrary(state) ? 'Bridge geometry and bearings — set from the selected standard bridge (open to adjust)' : 'Bridge geometry and bearings'));
     det.append(fieldset('Bridge geometry and bearings', FIELDS.project.filter((d) => !PROJECT_MAIN.includes(d.path)), state, state, null, onChange));
     p.append(det);
-    renderBearings(p, state, onChange);
+    renderBearings(p, state, onChange, null);
     p.append(h('p', 'field-help', 'Choose the bridge on the Loads tab — selecting a standard Beaver Bridges product fills in the span, width, bearings and loads.'));
   } else {
     p.append(h('p', 'field-help', 'Retaining-wall mode: analysis per metre run (set L = 1000 mm) or for the full length; bridge, hydraulic and crossing checks are not run.'));
@@ -934,27 +947,66 @@ function renderThermalRestraint(state, onChange) {
 }
 
 // Bearing layout per end: position along the face and fixity.
-function renderBearings(p, state, onChange) {
-  const nb = Math.max(1, Number(state.project.bearingsPerEnd) || 1);
+function renderBearings(p, state, onChange, api, live = null) {
+  const P = state.project;
+  const nb = Math.max(1, Number(P.bearingsPerEnd) || 1);
+  p.append(fieldset('Bearing layout (both ends)', pick(FIELDS.project, ['project.bearingsPerEnd', 'project.bearingCentres', 'project.bearingPlateL', 'project.bearingPlateB']), state, state, null, onChange));
   const row = h('div', 'lg-cols');
+  const out = api?.getOutput()?.design;
   [0, 1].forEach((i) => {
     const end = state.ends[i];
     end.bearings = end.bearings || [];
-    const L = (end.arrangement.L_mm || 4800) / 1000;
-    const auto = endBearings(state, i, L, 0);
-    while (end.bearings.length < nb) end.bearings.push({ v_mm: null, fixity: '' });
+    while (end.bearings.length < nb) end.bearings.push({ fixity: '' });
     end.bearings.length = nb;
-    const fs = h('fieldset', 'lg-fieldset');
-    fs.append(h('legend', null, `${e(end.label)} — bearings`));
-    const tbl = createTable({
-      columns: [
-        { key: 'v_mm', label: 'v from abutment end', type: 'number', unit: 'mm', step: 50, nullable: true },
-        { key: 'fixity', label: 'Fixity', type: 'select', options: [['', `From fixed end (${auto[0]?.fixity || '—'})`], ['fixed', 'Fixed'], ['guided', 'Guided (fixed transversely)'], ['free', 'Free (sliding)']] },
-      ],
-      rows: end.bearings, onChange: () => onChange(false), compact: true, allowDuplicate: false, minRows: nb, rowLabel: (r, k) => `B${k + 1}`,
+    end.bearingPlacement = end.bearingPlacement || 'auto';
+    const geomB = out?.ends?.find((x) => x.endIdx === i)?.geom?.bearings || endBearings(state, i, (end.arrangement.L_mm || 4800) / 1000, 0);
+    const defFix = Number(P.fixedEnd) === 0 || Number(P.fixedEnd) === i + 1 ? 'fixed' : 'free';
+    const fs = fieldset(`${e(end.label)} — bearings`, [
+      { path: 'bearingPlacement', label: 'Position along the abutment', type: 'select', options: [['auto', 'Auto — slide the group onto the blocks (≥ 100 mm in)'], ['centre', 'Centred on the abutment'], ['user', 'Offset from centre (user)']], help: 'Bearings stay at the bearing centres. Auto moves the whole group in 50 mm steps, nearest the centre, so every plate is wholly on one seat block and at least 100 mm from its edges.' },
+      { path: 'bearingOffset_mm', label: 'Group offset from the abutment centre', unit: 'mm', step: 50, slider: [-1600, 1600, 50], showIf: (st, en) => en.bearingPlacement === 'user' },
+    ], end, state, end, onChange);
+    const tbl = h('div', 'tbl-scroll');
+    const t = document.createElement('table');
+    t.className = 'tbl-input lg-bearing-tbl';
+    t.innerHTML = '<thead><tr><th>#</th><th title="Position from the abutment end">v (mm)</th><th title="Plate edge to block edge, required ≥ 100 mm">Edge</th><th>Fixity</th></tr></thead>';
+    const tb = document.createElement('tbody');
+    const cells = [];
+    const fillRow = (gb, k) => {
+      if (!cells[k] || !gb) return;
+      const cl = gb.clearance;
+      cells[k].v.textContent = Math.round(gb.v * 1000);
+      cells[k].c.textContent = cl === null || cl === undefined ? '—' : cl >= 0.1 - 1e-9 ? `✓ ${Math.round(cl * 1000)} mm` : cl > 0 ? `✗ ${Math.round(cl * 1000)} mm` : '✗ straddles a joint';
+      cells[k].c.className = cl !== null && cl !== undefined && cl < 0.1 - 1e-9 ? 'lg-bad' : 'lg-good';
+    };
+    geomB.forEach((gb, k) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>B${k + 1}</td><td class="num"></td><td></td>`;
+      cells[k] = { v: tr.children[1], c: tr.children[2] };
+      fillRow(gb, k);
+      const td = document.createElement('td');
+      const sel = document.createElement('select');
+      sel.setAttribute('aria-label', `Fixity of bearing ${k + 1}, ${end.label}`);
+      [['', `Auto (${defFix})`], ['fixed', 'Fixed'], ['guided', 'Guided'], ['free', 'Free']].forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; sel.append(o); });
+      sel.value = end.bearings[k].fixity || '';
+      sel.addEventListener('change', () => { end.bearings[k].fixity = sel.value; onChange(true); });
+      td.append(sel);
+      tr.append(td);
+      tb.append(tr);
     });
-    tbl.querySelector('.tbl-bar')?.remove();
-    fs.append(tbl, h('p', 'field-help', `Blank v = at the bearing centres: ${auto.map((b) => Math.round(b.v * 1000)).join(', ')} mm. Braking and longitudinal wind go to fixed bearings only; free and guided bearings carry ±μ(G + traffic).`));
+    t.append(tb);
+    tbl.append(t);
+    if (live) {
+      const prev = live.bearings;
+      live.bearings = (o) => {
+        if (prev) prev(o);
+        const gbs = o?.design?.ends?.find((x) => x.endIdx === i)?.geom?.bearings;
+        if (gbs && gbs.length === cells.length) gbs.forEach(fillRow);
+      };
+    }
+    const pl = geomB[0]?.placement;
+    fs.append(tbl, h('p', `field-help${pl === 'auto-failed' ? ' lg-bad' : ''}`, pl === 'auto-failed'
+      ? 'No position along the abutment gives every plate 100 mm clearance on one block — change the bearing centres, abutment length or seat course bond (check L6).'
+      : `Positions from the bearing centres (${Math.round((Number(P.bearingCentres) || 0) * 1000)} mm)${pl === 'auto' && Math.abs(geomB[0].groupOffset) > 1e-6 ? `, group shifted ${Math.round(geomB[0].groupOffset * 1000)} mm from the abutment centre to suit the blocks` : ''}. Braking and longitudinal wind go to fixed bearings only; free and guided bearings carry ±μ(G + traffic).`));
     row.append(fs);
   });
   p.append(row);

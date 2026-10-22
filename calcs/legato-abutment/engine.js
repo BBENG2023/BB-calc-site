@@ -75,7 +75,7 @@ export function buildGeom(state, endIdx, ground, layout) {
     const u = isNum(A.bearingU_mm) ? Number(A.bearingU_mm) / 1000 : (seat.u0 + exposedRear) / 2;
     const zH = seat.z1 + ((A.bearingGrout || 0) + (P.bearingHeight || 0)) / 1000;
     bearing = { u, v: L / 2, zSeat: seat.z1, zH };
-    bearingPositions = endBearings(state, endIdx, L, u);
+    bearingPositions = endBearings(state, endIdx, L, u, seat);
   }
 
   const gw = ground.gw.level;

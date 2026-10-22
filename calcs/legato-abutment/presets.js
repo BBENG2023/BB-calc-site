@@ -87,6 +87,7 @@ export function v2Synthetic() {
   e.arrangement.bearingGrout = 0;
   // V2 checks the whole-abutment method: full-length dispersion (RC capping
   // beam assumed so the whole length acts together).
+  e.bearingPlacement = 'centre'; // V2 hand calc: bearings central on the abutment
   e.arrangement.dispersion = { mode: 'full', angleRatio: 2, justification: '', capBeam: { on: true, b: 2400, h: 600, As: 2500, fck: 32, fyk: 500, cover: 50 } };
   const e2 = clone(e);
   e2.label = 'End 2';

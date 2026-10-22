@@ -9,6 +9,11 @@ import { evaluateEnd } from './engine.js';
 // seat course of depth `shelf` at the rear (front step at the shelf), and
 // an 800 mm ballast wall at the rear of the seat.
 export function familyCourses({ B, s, nBelow, shelf, frontStep, ballast = 800, orient = 'Mixed' }) {
+  // nBelow = 0: a single layer — the seat course sits straight on the pad,
+  // full base width, with the ballast wall at its rear.
+  if (nBelow === 0) {
+    return [newCourse({ u_front: 0, u_rear: B, orient, role: 'seat' }), newCourse({ u_front: B - ballast, u_rear: B, orient, role: 'ballast' })];
+  }
   const upperRear = B - s;
   const courses = [];
   for (let i = 0; i < nBelow; i++) courses.push(newCourse({ u_front: 0, u_rear: i === 0 ? B : upperRear, orient, role: 'base' }));
@@ -47,7 +52,7 @@ export function* autoSizeSteps(state0, endIdx) {
   const pr = evaluateEnd(probe, endIdx);
   const maxF = pr.levels.maxFormation.level;
   const padMax = (A.pad.max ?? 500) / 1000;
-  let nMin = 1;
+  let nMin = 0;
   while (seat - (nMin + 1) * 0.8 - padMax > maxF + 1e-9 && nMin < 12) nMin++;
 
   // Ballast wall 800 (one row) or 1200 (heavier, for larger surcharge); the

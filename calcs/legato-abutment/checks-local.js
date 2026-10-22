@@ -3,6 +3,9 @@
 
 import { LEGATO_CONCRETE, LEGATO_BLOCKS } from '../../js/shared-data.js';
 import { f1, f2, f3 } from './checks-external.js';
+import { PLATE_EDGE_MIN } from './actions.js';
+
+const fmtMm = (x) => (Number.isFinite(x) ? Math.round(x).toString() : '—');
 
 export function checkLocal(ctx, layout) {
   const { geom, state } = ctx;
@@ -45,6 +48,21 @@ export function checkLocal(ctx, layout) {
     out.push({
       id: 'L1', title: 'Bearing seat compression', clause: 'BS EN 1992-1-1 12.6.1 (plain concrete)', util, pass: util <= 1, Fzd: fz, bearing: govBearing,
       steps: [{ title: `Bearing seat compression — ${govLabel || 'no deck loads'}`, formula: 'σ = Fz,d / (L_p × B_p) ≤ fcd,pl (EC2 6.7 concentrated-load enhancement not used — unreinforced, splitting risk)', substitution: `Fz,d = ${f1(fz)} kN on bearing ${govBearing + 1} (DA1-C1 / STR factors); plate ${P.bearingPlateL} × ${P.bearingPlateB} mm`, result: `σ = ${f2(sigma)} N/mm² vs ${LEGATO_CONCRETE.fcdPl} N/mm²; utilisation ${f3(util)}` }],
+    });
+  }
+
+  // L6 bearing plate wholly on one seat block, ≥ 100 mm from its edges.
+  if (bridge && layout.seat && geom.bearings?.length) {
+    const min = PLATE_EDGE_MIN;
+    const rows = geom.bearings.map((b) => ({ k: b.k, v: b.v, c: b.clearance }));
+    const worst = rows.reduce((m, r) => (m === null || r.c < m.c ? r : m), null);
+    // ≤ 1 when the clearance is at least 100 mm (to the nearest 0.1 mm).
+    const util = worst.c >= min - 1e-4 ? Math.min(1, min / worst.c) : worst.c > 1e-6 ? min / worst.c : 9.99;
+    const pl = geom.bearings[0].placement;
+    out.push({
+      id: 'L6', title: 'Bearing plate on one block (≥ 100 mm from edges)', clause: 'BB detailing rule; Elite: no load across vertical joints', util, pass: worst.c >= min - 1e-4,
+      steps: [{ title: 'Plate position on the seat blocks', formula: 'clearance = min(plate edge to block edge) over all four sides, plate wholly on one block; required ≥ 100 mm', substitution: `Plate ${P.bearingPlateL} × ${P.bearingPlateB} mm at bearing centres ${fmtMm(P.bearingCentres * 1000)} mm; group ${pl === 'user' ? 'offset by the user' : pl === 'centre' ? 'centred on the abutment' : pl === 'auto' ? `auto-shifted ${fmtMm(geom.bearings[0].groupOffset * 1000)} mm from centre to suit the blocks` : 'auto-shift found no position with 100 mm clearance — best position used'}`, result: rows.map((r) => `B${r.k + 1} at v ${f3(r.v)} m: ${r.c > 0 ? `${fmtMm(r.c * 1000)} mm` : 'straddles a joint'}`).join('; ') }],
+      warnings: worst.c >= min - 1e-4 ? [] : [`Bearing plate clearance ${worst.c > 0 ? `${fmtMm(worst.c * 1000)} mm` : '— plate straddles a joint'} is below 100 mm. Change the bearing centres, abutment length or seat course bond, or use a larger seat block.`],
     });
   }
 

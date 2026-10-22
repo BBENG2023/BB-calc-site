@@ -121,6 +121,10 @@ export function newEnd(n) {
     // Per-bearing position along the face (v_mm, blank = at bearing centres)
     // and fixity ('fixed' | 'guided' | 'free', blank = from the fixed end).
     bearings: [],
+    // Bearing group position along the face: 'auto' slides the group (at the
+    // bearing centres) so every plate is ≥ 100 mm inside one seat block.
+    bearingPlacement: 'auto',
+    bearingOffset_mm: 0,
   };
 }
 
