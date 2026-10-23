@@ -513,7 +513,7 @@ export function drawingD5(state, design, endIdx = 0) {
   const tests = gr.processed.flatMap((p) => p.tests.map((t) => ({ ...t, bh: p.id })));
   tests.forEach((t) => lvls.push(t.level));
   const y1 = Math.max(...lvls) + 0.3, y0 = Math.max(Math.min(...lvls) - 0.3, Math.max(...lvls) - 16);
-  const panel = (ox, pwid, xmax, label, valueFn, charFn) => {
+  const panel = (ox, pwid, xmax, label, valueFn, charFn, opts) => {
     const view = makeView({ x0: 0, x1: xmax, y0, y1 }, { width: pwid, height: H - 70, pad: 40 });
     const X = (x) => ox + view.X(x), Y = view.Y;
     let s = rect(X(0), Y(y1), X(xmax) - X(0), Y(y0) - Y(y1), { fill: '#fff', stroke: INK, width: 0.8 });
@@ -535,6 +535,11 @@ export function drawingD5(state, design, endIdx = 0) {
       else if (m === 'square') s += rect(x - 3, y - 3, 6, 6, { fill: p.id === gr.designId ? NAVY : '#fff', stroke: NAVY });
       else s += polygon([[x, y - 4], [x + 4, y], [x, y + 4], [x - 4, y]], { fill: p.id === gr.designId ? NAVY : '#fff', stroke: NAVY });
     }));
+    if (opts?.pp) gr.processed.forEach((p) => (p.ppTests || []).forEach((t) => {
+      if (!t.use) return;
+      const x = X(Math.min(t.cu, xmax)), y = Y(t.level);
+      s += polygon([[x, y - 4], [x + 4, y + 3], [x - 4, y + 3]], { fill: '#fff', stroke: ORANGE, width: 1.2 });
+    }));
     s += line(X(0), Y(er.geom.formationLevel), X(xmax), Y(er.geom.formationLevel), { stroke: '#b3261e', width: 1, dash: '6 3' });
     s += text(X(xmax) - 3, Y(er.geom.formationLevel) - 3, `Formation ${fx(er.geom.formationLevel)}`, { size: 8, anchor: 'end', fill: '#b3261e' });
     s += text((X(0) + X(xmax)) / 2, 22, label, { size: 10, weight: 800, anchor: 'middle', fill: NAVY });
@@ -543,10 +548,12 @@ export function drawingD5(state, design, endIdx = 0) {
   let o = '';
   o += panel(0, W / 2, 60, 'SPT N60 vs level (mAOD) — capped display', (t) => t.N60, (l) => l.N60);
   const coh = gr.layers.some((l) => l.cls === 'Cohesive');
-  o += panel(W / 2, W / 2, coh ? 200 : 45, coh ? 'cu (kPa, Stroud) and φ′ (°) vs level' : 'φ′ (°) vs level', (t) => (t.cls === 'Cohesive' ? (coh ? t.cu : NaN) : t.phi), (l) => (l.cls === 'Cohesive' ? l.cu : l.phi));
+  const hasPP = gr.processed.some((p) => (p.ppTests || []).some((t) => t.use));
+  o += panel(W / 2, W / 2, coh ? 200 : 45, coh ? `cu (kPa, Stroud${hasPP ? ' and pocket penetrometer' : ''}) and φ′ (°) vs level` : 'φ′ (°) vs level', (t) => (t.cls === 'Cohesive' ? (coh ? t.cu : NaN) : t.phi), (l) => (l.cls === 'Cohesive' ? l.cu : l.phi), { pp: hasPP });
   o += legend(W - 330, H - 100, [
     ...gr.processed.map((p) => ({ label: `${p.id}${p.id === gr.designId ? ' (design borehole)' : ''}`, fill: p.id === gr.designId ? NAVY : '#fff', stroke: NAVY })),
     { label: 'Characteristic value', kind: 'line', stroke: ORANGE, width: 2 },
+    ...(hasPP ? [{ label: 'Pocket penetrometer cu', fill: '#fff', stroke: ORANGE }] : []),
   ], { cols: 2, colWidth: 160, size: 8 });
   if (!gr.processed.length) o += text(W / 2, H / 2, 'Manual design profile — no borehole SPT data for this end', { size: 11, anchor: 'middle', fill: GREY });
   o += titleStrip(W, H, { title: `D5 — SPT N60 and derived parameters, ${er.label}`, drawingNo: `D5-${endIdx + 1}` });

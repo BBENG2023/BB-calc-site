@@ -127,13 +127,15 @@ export function buildReport(state, output, headerDetails = {}, calc) {
   endsL.forEach((x) => {
     const gr = x.ground;
     const bhRows = gr.processed.map((p) => [e(p.id), fx(p.bh.GL), fx(p.bh.finalDepth, 1), p.Er, `${p.bh.standing ?? '—'} / ${p.bh.roseTo ?? '—'}`, p.tests.length]);
-    const layerRows = gr.layers.map((l) => [e(l.desc || l.cls), e(l.cls), `${fx(l.topLevel)} to ${fx(l.baseLevel)}`, fx(l.gamma, 1), l.cls === 'Cohesive' ? `cu ${fx(l.cu, 0)} kPa; φ′ ${fx(l.phi, 1)}°` : `φ′ ${fx(l.phi, 1)}°`, l.char?.phi ? `${l.char.phi.method}: n ${l.char.phi.n}, mean ${fx(l.char.phi.mean, 1)}, SD ${fx(l.char.phi.sd, 1)}` : l.char?.cu ? `${l.char.cu.method}: n ${l.char.cu.n}, mean ${fx(l.char.cu.mean, 0)}, SD ${fx(l.char.cu.sd, 0)}` : e(l.source || ''), l.unsuitable ? 'Unsuitable' : e(l.overrideNote || '')]);
+    const layerRows = gr.layers.map((l) => [e(l.desc || l.cls), e(l.cls), `${fx(l.topLevel)} to ${fx(l.baseLevel)}`, fx(l.gamma, 1), l.cls === 'Cohesive' ? `cu ${fx(l.cu, 0)} kPa; φ′ ${fx(l.phi, 1)}°` : `φ′ ${fx(l.phi, 1)}°`, l.char?.phi ? `${l.char.phi.method}: n ${l.char.phi.n}, mean ${fx(l.char.phi.mean, 1)}, SD ${fx(l.char.phi.sd, 1)}` : l.char?.cu ? `${l.char.cu.method}: n ${l.char.cu.n}${l.char.cu.sources ? ` (${e(l.char.cu.sources)})` : ''}, mean ${fx(l.char.cu.mean, 0)}, SD ${fx(l.char.cu.sd, 0)}${l.char.mvNote ? `; ${e(l.char.mvNote)}` : ''}` : e(l.source || ''), l.unsuitable ? 'Unsuitable' : e(l.overrideNote || '')]);
+    const ppRows = gr.processed.flatMap((p) => (p.ppTests || []).map((t) => [e(p.id), fx(t.depth, 2), e(String(t.raw ?? '')), e(p.bh.ppUnit === 'kPa-qu' ? 'kPa qu' : p.bh.ppUnit === 'kPa-cu' ? 'kPa cu' : 'kg/cm²'), t.use ? fx(t.qu, 0) : '—', t.use ? `${fx(t.cu, 0)}${t.lowerBound ? ' (lower bound)' : ''}` : e(t.error || 'not cohesive — ignored')]));
     const testRows = gr.processed.flatMap((p) => p.tests.map((t) => [e(p.id), fx(t.depth, 2), e(t.raw), fx(t.N, 1), fx(t.N60, 1), fx(t.sigmaV, 1), fx(t.CN, 3), fx(t.N160, 1), t.phi ? fx(t.phi, 1) : t.cu ? `cu ${fx(t.cu, 0)}` : '—']));
     add(5, `Ground model — ${x.label}`, `
       <p>Design groundwater ${Number.isFinite(gr.gw.level) ? fx(gr.gw.level) : 'deep'} mAOD (${e(gr.gw.source)}). Design borehole: ${e(gr.designId || 'manual profile')}.</p>
       ${bhRows.length ? tableHTML(['Borehole', 'GL mAOD', 'Depth m', 'Er %', 'Standing / rose to (m bgl)', 'SPTs'], bhRows) : ''}
       ${h5('Design profile and characteristic values (BS EN 1997-1 2.4.5.2)')}${tableHTML(['Stratum', 'Class', 'Levels mAOD', 'γ kN/m³', 'Parameters', 'Derivation', 'Note'], layerRows)}
       ${testRows.length ? `${h5('SPT processing (N60 = N·Er/60; C_N = min(√(100/σ′v), 2.0), Liao & Whitman 1986; φ′ PHT/Wolff or Hatanaka & Uchida; cu = f1·N60, Stroud 1974)')}${tableHTML(['BH', 'Depth', 'Result', 'N', 'N60', 'σ′v kPa', 'C_N', '(N1)60', 'φ′ / cu'], testRows, 'lg-small')}` : ''}
+      ${ppRows.length ? `${h5('Pocket penetrometer (index test, BS 5930:2015+A1:2020): qu from the reading, cu = qu/2 × reduction factor; cohesive strata only — verify against hand vane or triaxial results')}${tableHTML(['BH', 'Depth', 'Reading', 'Units', 'qu kPa', 'cu kPa'], ppRows, 'lg-small')}` : ''}
       <div class="lg-drawing">${drawingD5(state, D, x.endIdx)}</div>`);
   });
 

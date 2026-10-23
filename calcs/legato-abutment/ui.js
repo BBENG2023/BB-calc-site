@@ -23,7 +23,7 @@ import { allDrawings, diagramD2, drawingD3b } from './drawings.js';
 import { detectBank } from './crossing.js';
 import { defaultClauses, defaultDRA } from './spec.js';
 import { defaultL_mm } from './layout.js';
-import { parseSPT } from '../../js/geo-core.js';
+import { parseSPT, parsePP } from '../../js/geo-core.js';
 
 const AUTOSAVE_KEY = 'bb-legato-abutment-state';
 const e = escapeHtml;
@@ -389,7 +389,7 @@ export function customUI(container, state, api) {
     T.push({ key: 'q-project', label: '1 Project', need: 'You need: the project number and title, and who is designing it.', render: (p) => renderQuickProject(p, state, onChange, api) });
     T.push({ key: 'q-bridge', label: '2 Bridge & bearings', need: bridgeMode(state) ? 'You need: the bridge type and span, and the bearing layout and fixity from the supplier’s GA.' : 'Retaining-wall mode — no bridge.', render: (p) => renderQuickBridge(p, state, onChange, api, live) });
     T.push({ key: 'q-loads', label: '3 Loads', need: 'You need: the supplier’s reaction schedule (check its units), the load model and the approach surcharge.', render: (p) => renderQuickLoads(p, state, onChange, api) });
-    T.push({ key: 'q-ground', label: '4 Ground', need: 'You need: seat and road levels, ground and water levels (GA, topographic survey, flood study) and the borehole logs.', render: (p) => renderQuickGround(p, state, E(), activeEnd(), onChange, api, live) });
+    T.push({ key: 'q-ground', label: '4 Ground', need: 'You need: seat and road levels, ground and water levels (GA, topographic survey, flood study) and the borehole logs (SPT N and/or pocket penetrometer readings).', render: (p) => renderQuickGround(p, state, E(), activeEnd(), onChange, api, live) });
     T.push({ key: 'q-size', label: '5 Arrangement', need: 'Press Auto-size, or drag the sliders. The section, the load path and the checks update as you go.', render: (p) => renderQuickSize(p, state, E(), activeEnd(), onChange, api, live) });
     T.push({ key: 'q-limits', label: '6 Limits & overrides', need: 'Use the bridge supplier’s settlement limits. Any override needs a written justification.', render: (p) => renderQuickLimits(p, state, onChange, api, live) });
     T.push({ key: 'q-results', label: '7 Results', need: 'Clear everything in the list, run global stability, then print the report.', render: (p) => renderQuickResults(p, state, api, live) });
@@ -1193,7 +1193,7 @@ function renderCrossing(p, state, end, idx, onChange, api) {
 function renderGround(p, state, end, idx, onChange, api) {
   const label = bridgeMode(state) ? end.label : 'Wall';
   const endName = `End ${idx + 1}`;
-  p.append(h('p', 'field-help lg-lead', `Enter each borehole for ${e(label)} as it appears on the log: the depth, the soil and the SPT N value. The tool corrects N, derives φ′ or cu, sets characteristic values and builds the design profile.`));
+  p.append(h('p', 'field-help lg-lead', `Enter each borehole for ${e(label)} as it appears on the log: the depth, the soil and the SPT N value — or, in clay, the pocket penetrometer (PP) reading where that is all the GI gives. The tool corrects N, derives φ′ or cu, sets characteristic values and builds the design profile.`));
   const mine = state.boreholes.map((b, i) => [b, i]).filter(([b]) => b.end === endName || b.end === 'Both');
   if (!mine.length) p.append(h('p', 'lg-mod', `No boreholes for ${e(label)} yet — add one below${end.groundMode === 'manual' ? ' (a manual design profile is currently in use — see Advanced)' : ''}.`));
   mine.forEach(([bh, bi]) => p.append(boreholeCard(state, bh, bi, end, onChange)));
@@ -1274,19 +1274,22 @@ function boreholeCard(state, bh, bi, end, onChange) {
     { path: 'chainage', label: 'Chainage (for drawings)', unit: 'm', step: 0.1 },
     { path: 'end', label: 'Use for', type: 'select', options: [['End 1', 'End 1'], ['End 2', 'End 2'], ['Both', 'Both ends']] },
     { path: 'Er', label: 'SPT hammer energy Er (blank = 60%)', unit: '%', step: 1, nullable: true },
+    { path: 'ppUnit', label: 'Pocket penetrometer (PP) units', type: 'select', options: [['kgcm2', 'kg/cm² (instrument scale, qu)'], ['kPa-qu', 'kPa — unconfined strength qu'], ['kPa-cu', 'kPa — already cu']], help: 'PP is for clays and silts only. cu = qu/2. Readings of “4.5+” or “>4.5” are taken as lower bounds.' },
+    { path: 'ppFactor', label: 'Reduction factor on PP cu (1.0 = none)', step: 0.05, min: 0.3, max: 1, help: 'Optional cautious factor where PP may overstate cu (fissured or stony clay) — justify on the sheet.' },
   ];
   fs.append(fieldset('Borehole', hdr, bh, state, end, (s) => onChange(s), 'lg-plain'));
   if (bh.simple) {
-    fs.append(h('p', 'field-help', 'One row per log entry: depth below ground, the soil as logged and the SPT N as written (e.g. 15, or 50/75 for a refusal). A row with no N marks the top of a new soil. Paste straight from a spreadsheet.'));
+    fs.append(h('p', 'field-help', 'One row per log entry: depth below ground, the soil as logged, and the SPT N as written (e.g. 15, or 50/75 for a refusal) and/or the pocket penetrometer (PP) reading in clay. Use either where the GI gives only one. A row with neither marks the top of a new soil. Paste straight from a spreadsheet.'));
     fs.append(createTable({
       columns: [
         { key: 'depth', label: 'Depth', type: 'number', unit: 'm', step: 0.1 },
         { key: 'soil', label: 'Soil', type: 'select', options: SIMPLE_SOILS },
         { key: 'N', label: 'SPT N', type: 'text', width: '6rem', validate: (v) => { if (v === null || v === undefined || String(v).trim() === '') return ''; const r2 = parseSPT(v); return r2.error ? 'Not a readable SPT result' : ''; } },
+        { key: 'PP', label: `PP (${bh.ppUnit === 'kPa-qu' ? 'kPa qu' : bh.ppUnit === 'kPa-cu' ? 'kPa cu' : 'kg/cm²'})`, type: 'text', width: '5rem', validate: (v) => { if (v === null || v === undefined || String(v).trim() === '') return ''; return parsePP(v, bh.ppUnit).error ? 'Not a readable PP value' : ''; } },
         { key: 'note', label: 'Log description (optional)', type: 'text', width: '12rem' },
       ],
       rows: bh.simpleRows, onChange: () => onChange(false), compact: true, allowDuplicate: false,
-      newRow: () => { const last = bh.simpleRows[bh.simpleRows.length - 1]; return { depth: last ? Number(last.depth) + 1 : 0, soil: last ? last.soil : 'Sand', N: '', note: '' }; },
+      newRow: () => { const last = bh.simpleRows[bh.simpleRows.length - 1]; return { depth: last ? Number(last.depth) + 1 : 0, soil: last ? last.soil : 'Sand', N: '', PP: '', note: '' }; },
     }));
   } else {
     bh.strata.forEach((s) => { s.lab = s.lab || {}; });
@@ -1298,6 +1301,12 @@ function boreholeCard(state, bh, bi, end, onChange) {
         { key: 'lab', label: 'Lab γ / φ′ / cu / rock Rd', render: (row) => labCell(row, () => onChange(false)) },
       ],
       rows: bh.strata, onChange: () => onChange(false), newRow: () => { const last = bh.strata[bh.strata.length - 1]; return { top: last ? last.base : 0, base: (last ? last.base : 0) + 1, desc: '', cls: 'Granular', PI: null, granType: 'Sand', lab: {} }; },
+    }));
+    bh.pp = bh.pp || [];
+    fs.append(h('h4', 'lg-h4', 'Pocket penetrometer results (cohesive strata)'));
+    fs.append(createTable({
+      columns: [{ key: 'depth', label: 'Depth', type: 'number', unit: 'm' }, { key: 'result', label: `Reading (${bh.ppUnit === 'kPa-qu' ? 'kPa qu' : bh.ppUnit === 'kPa-cu' ? 'kPa cu' : 'kg/cm²'})`, type: 'text', width: '8rem', validate: (v) => (parsePP(v, bh.ppUnit).error ? 'Not a readable PP value' : '') }],
+      rows: bh.pp, onChange: () => onChange(false), newRow: () => ({ depth: (bh.pp[bh.pp.length - 1]?.depth ?? 0) + 0.5, result: '' }), compact: true,
     }));
     fs.append(h('h4', 'lg-h4', 'SPT results'));
     fs.append(createTable({
@@ -1312,7 +1321,7 @@ function boreholeCard(state, bh, bi, end, onChange) {
     adv.addEventListener('click', () => {
       if (!window.confirm('Switch this borehole to detailed strata + SPT entry? The simple rows are converted and the simple view is not kept.')) return;
       const x = expandSimpleBorehole(bh);
-      bh.strata = x.strata; bh.spt = x.spt; bh.finalDepth = x.finalDepth; bh.simple = false;
+      bh.strata = x.strata; bh.spt = x.spt; bh.pp = x.pp; bh.finalDepth = x.finalDepth; bh.simple = false;
       onChange(true);
     });
     bar.append(adv);

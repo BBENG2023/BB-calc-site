@@ -3,7 +3,7 @@
 
 import {
   parseSPT, n60, overburdenCN, phiPHT, phiHatanaka, cuStroud, stroudF1, mvStroud, EStroud,
-  defaultUnitWeight, characteristicValue, phiCritFromPI, GAMMA_W,
+  defaultUnitWeight, characteristicValue, phiCritFromPI, GAMMA_W, parsePP,
 } from '../../js/geo-core.js';
 import { UNSUITABLE } from './schema.js';
 
@@ -30,6 +30,8 @@ export function expandSimpleBorehole(bh) {
   if (!bh.simple) return bh;
   const rows = (bh.simpleRows || []).filter((x) => isNum(x.depth)).map((x) => ({ ...x, depth: Number(x.depth) })).sort((a, b) => a.depth - b.depth);
   const hasN = (x) => x.N !== null && x.N !== undefined && String(x.N).trim() !== '';
+  const hasPP = (x) => x.PP !== null && x.PP !== undefined && String(x.PP).trim() !== '';
+  const hasTest = (x) => hasN(x) || hasPP(x);
   const groups = [];
   rows.forEach((x) => {
     const last = groups[groups.length - 1];
@@ -43,7 +45,7 @@ export function expandSimpleBorehole(bh) {
     if (i > 0) {
       const prev = groups[i - 1].rows[groups[i - 1].rows.length - 1].depth;
       const first = g.rows[0];
-      top = hasN(first) ? (prev + first.depth) / 2 : first.depth;
+      top = hasTest(first) ? (prev + first.depth) / 2 : first.depth;
     }
     const m = SOIL_MAP[g.soil] || SOIL_MAP.Sand;
     const notes = g.rows.map((x) => x.note).filter(Boolean);
@@ -51,7 +53,8 @@ export function expandSimpleBorehole(bh) {
   });
   strata.forEach((s, i) => { s.base = i < strata.length - 1 ? strata[i + 1].top : base; });
   const spt = rows.filter(hasN).map((x) => ({ depth: x.depth, type: 'S', result: String(x.N).trim() }));
-  return { ...bh, finalDepth: base, strata, spt };
+  const pp = rows.filter(hasPP).map((x) => ({ depth: x.depth, result: String(x.PP).trim() }));
+  return { ...bh, finalDepth: base, strata, spt, pp };
 }
 
 export function boreholesForEnd(state, endIdx) {
@@ -87,7 +90,7 @@ export function designGroundwater(state, endIdx) {
 export function processBorehole(bh, opts, gwLevel) {
   const warnings = [];
   const Er = isNum(bh.Er) ? Number(bh.Er) : 60;
-  if (!isNum(bh.Er)) warnings.push(`${bh.id}: SPT hammer energy ratio not given — 60% assumed. Obtain Er from the hammer calibration certificate.`);
+  if (!isNum(bh.Er) && (bh.spt || []).length) warnings.push(`${bh.id}: SPT hammer energy ratio not given — 60% assumed. Obtain Er from the hammer calibration certificate.`);
   const Ncap = opts.Ncap || 50;
   const strata = (bh.strata || []).map((s) => ({ ...s, top: Number(s.top), base: Number(s.base) })).sort((a, b) => a.top - b.top);
 
@@ -103,11 +106,29 @@ export function processBorehole(bh, opts, gwLevel) {
     return { depth, level: bh.GL - depth, type: t.type || 'S', raw: t.result, parsed: p, N: p.N, N60, stratumIdx: si, cls: si >= 0 ? strata[si].cls : null };
   });
 
-  // Stratum unit weights from median N60 (granular) or cu (cohesive).
+  // Pocket penetrometer readings (cohesive strata only): cu = qu/2 × factor.
+  const ppUnit = bh.ppUnit || 'kgcm2';
+  const ppTests = (bh.pp || []).map((t) => {
+    const depth = Number(t.depth);
+    const r = parsePP(t.result, ppUnit, bh.ppFactor);
+    const si = stratumAt(depth);
+    const cls = si >= 0 ? strata[si].cls : null;
+    if (r.error) warnings.push(`${bh.id} @ ${depth} m: ${r.error}.`);
+    if (!r.error && !r.empty && cls !== 'Cohesive') warnings.push(`${bh.id} @ ${depth} m: pocket penetrometer reading in ${cls ? cls.toLowerCase() : 'unlogged'} soil ignored — PP applies to cohesive soils only.`);
+    return { depth, level: bh.GL - depth, raw: t.result, ...r, stratumIdx: si, cls, source: 'PP', use: !r.error && !r.empty && cls === 'Cohesive' };
+  });
+  if (ppTests.some((t) => t.use)) {
+    warnings.push(`${bh.id}: cu from pocket penetrometer readings (cu = qu/2${Number(bh.ppFactor) && Number(bh.ppFactor) !== 1 ? ` × ${bh.ppFactor}` : ''}). PP is an index test only (BS 5930:2015+A1:2020) — it can overstate cu in fissured or stony clay. Confirm with hand vane or triaxial results (verify).`);
+    if (ppTests.some((t) => t.use && t.lowerBound)) warnings.push(`${bh.id}: some PP readings are at or above the top of the scale (${'≥'} 4.5 kg/cm²) — taken as lower bounds.`);
+  }
+
+  // Stratum unit weights from median N60 (granular) or cu (cohesive; from
+  // SPT, or from PP readings where there is no SPT).
   strata.forEach((s, i) => {
     const Ns = tests.filter((t) => t.stratumIdx === i && t.N60 !== null).map((t) => Math.min(t.N60, Ncap));
     const med = Ns.length ? Ns.sort((a, b) => a - b)[Math.floor(Ns.length / 2)] : null;
-    const cu = med !== null ? cuStroud(med, s.PI) : null;
+    const pps = ppTests.filter((t) => t.use && t.stratumIdx === i).map((t) => t.cu).sort((a, b) => a - b);
+    const cu = med !== null ? cuStroud(med, s.PI) : pps.length ? pps[Math.floor(pps.length / 2)] : null;
     const [g, gs] = defaultUnitWeight(s.cls, { N60: med ?? undefined, cu: cu ?? undefined });
     s.gamma = isNum(s.lab?.gamma) ? Number(s.lab.gamma) : g;
     s.gammaSat = isNum(s.lab?.gammaSat) ? Number(s.lab.gammaSat) : Math.max(gs, s.gamma);
@@ -148,7 +169,8 @@ export function processBorehole(bh, opts, gwLevel) {
     }
   });
 
-  return { id: bh.id, bh, Er, strata, tests, warnings, sigmaV };
+  ppTests.forEach((t) => { if (t.use) t.sigmaV = sigmaV(t.depth); });
+  return { id: bh.id, bh, Er, strata, tests, ppTests, warnings, sigmaV };
 }
 
 // Characteristic values per stratum of the design borehole, with
@@ -174,11 +196,20 @@ function profileFromBorehole(pb, end, opts) {
       if (!ts.length) warnings.push(`${pb.id} stratum "${s.desc}" has no SPT results — φ′ = 30° assumed. Provide test data or an override.`);
       layer.E = layer.N60 !== null ? EStroud(layer.N60, opts.overconsolidated) : 10;
     } else if (s.cls === 'Cohesive') {
-      const ch = characteristicValue(ts.map((t) => t.cu), method);
+      // cu from SPT (Stroud) and pocket penetrometer readings together.
+      const pps = (pb.ppTests || []).filter((t) => t.use && t.stratumIdx === i);
+      const ch = characteristicValue([...ts.map((t) => t.cu), ...pps.map((t) => t.cu)], method);
+      ch.sources = [ts.length ? `${ts.length} SPT (Stroud)` : '', pps.length ? `${pps.length} PP` : ''].filter(Boolean).join(' + ');
       layer.char.cu = ch;
       layer.cu = Number.isFinite(ch.adopted) ? ch.adopted : 40;
-      if (!ts.length) warnings.push(`${pb.id} stratum "${s.desc}" has no SPT results — cu = 40 kPa assumed. Provide test data or an override.`);
-      layer.mv = layer.N60 !== null ? mvStroud(layer.N60, opts.f2 || 0.45) : 0.3;
+      if (!ts.length && !pps.length) warnings.push(`${pb.id} stratum "${s.desc}" has no SPT or pocket penetrometer results — cu = 40 kPa assumed. Provide test data or an override.`);
+      if (layer.N60 !== null) layer.mv = mvStroud(layer.N60, opts.f2 || 0.45);
+      else if (pps.length) {
+        // No SPT: equivalent N60 = cu / f1 (Stroud 1974) for mv.
+        const Neq = layer.cu / stroudF1(s.PI);
+        layer.mv = mvStroud(Neq, opts.f2 || 0.45);
+        layer.char.mvNote = `mv from PP cu via Stroud: N60,eq = cu/f1 = ${Neq.toFixed(1)}`;
+      } else layer.mv = 0.3;
       layer.phi = phiCritFromPI(s.PI);
       layer.c = 0;
     } else if (s.cls === 'Weathered rock' || s.cls === 'Rock') {

@@ -98,6 +98,19 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.6.4** — Legato abutment designer v1.4.4: **pocket penetrometer (PP)
+  input**.
+  - **Entry:** borehole rows take a PP reading as well as, or instead of,
+    SPT N. Units can be kg/cm² (instrument scale), kPa qu or kPa cu, with an
+    optional reduction factor. Detailed entry has a PP table.
+  - **Conversion:** cu = qu/2, cohesive strata only. Readings in granular
+    soil are ignored with a warning. "4.5+" and ">4.5" are lower bounds.
+  - **Characteristic cu:** taken from SPT (Stroud) and PP values together.
+    Without SPT, mv uses N60,eq = cu/f1.
+  - **Report and drawings:** a PP table, PP points on D5, and a verify flag
+    (PP is an index test, BS 5930).
+  - **Shared code:** `parsePP` in `js/geo-core.js`.
+
 - **v1.6.3** — Legato abutment designer v1.4.3: **ballast wall optional**.
   In Quick design step 5 choose None, 800 or 1200 mm; in Full detail use the
   "Ballast wall" tick box. With none, the seat course is the top course: the

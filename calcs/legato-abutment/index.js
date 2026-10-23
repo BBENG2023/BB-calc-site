@@ -13,11 +13,12 @@ import { searchCircles } from './slope.js';
 import { buildLayout, solveLevels, resolveCourses } from './layout.js';
 import { familyCourses } from './optimise.js';
 import { rotateToAbutment, earthCoefficient, normaliseLoads } from './actions.js';
-import { parseSPT, n60, overburdenCN, phiPHT, phiHatanaka, cuStroud } from '../../js/geo-core.js';
+import { parseSPT, n60, overburdenCN, phiPHT, phiHatanaka, cuStroud, parsePP } from '../../js/geo-core.js';
 import { LEGATO_BLOCKS, legatoVolume } from '../../js/shared-data.js';
 import { clone, inputHash } from './schema.js';
 import { libraryDesign } from '../../js/bridge-library.js';
-import { expandSimpleBorehole } from './ground.js';
+import { expandSimpleBorehole, processGround } from './ground.js';
+import { newSimpleBorehole } from './schema.js';
 
 function values(o) {
   const v = {};
@@ -126,7 +127,7 @@ export default {
   title: 'Bridge Abutment — Legato Interlocking Block (Bank Seat)',
   category: 'Bridge Substructures — Precast Block Abutments',
   tag: 'EC7 DA1 · Legato',
-  version: '1.4.3',
+  version: '1.4.4',
   schemaVersion: SCHEMA_VERSION,
   debounceMs: 250,
   references: [
@@ -466,6 +467,32 @@ export default {
           } };
         },
         expect: { courses: { value: 3, tol: 0 }, ballast: { value: 0, tol: 0 }, seatTop: { value: 1, tol: 0 }, I4a: { value: 0, tol: 0 }, bearingU: { value: 0, tol: 1e-9 }, single_courses: { value: 1, tol: 0 }, single_seat: { value: 1, tol: 0 } },
+      },
+      {
+        name: 'Pocket penetrometer: PP-only clay borehole (kg/cm²) → cu = qu/2 = 49.0, 58.8, 73.5 kPa; characteristic (n < 5, minimum) 49.0 kPa; mv from N60,eq = cu/f1; a PP reading in sand is ignored; "4.5+" is a lower bound (220.6 kPa); kPa-cu units pass straight through',
+        inputs: {},
+        run: () => {
+          const s = bbStandard();
+          s.ends[0].groundMode = 'boreholes';
+          s.boreholes = [newSimpleBorehole({ id: 'BHPP', end: 'End 1', GL: 100.5, Er: 60, simpleRows: [
+            { depth: 0, soil: 'Topsoil', N: '', PP: '', note: '' },
+            { depth: 0.5, soil: 'Sand', N: '', PP: '2.0', note: '' },
+            { depth: 1.0, soil: 'Clay/silt', N: '', PP: '', note: '' },
+            { depth: 1.5, soil: 'Clay/silt', N: '', PP: '1.0', note: '' },
+            { depth: 2.5, soil: 'Clay/silt', N: '', PP: '1.2', note: '' },
+            { depth: 3.5, soil: 'Clay/silt', N: '', PP: '1.5', note: '' },
+          ] })];
+          const g = processGround(s, 0);
+          const clay = g.layers.find((l) => l.cls === 'Cohesive');
+          const pb = g.processed[0];
+          return { values: {
+            cu_char: clay.cu, n_pp: clay.char.cu.n, mv_set: Number.isFinite(clay.mv) && clay.char.mvNote ? 1 : 0,
+            sand_ignored: pb.ppTests.filter((t) => t.cls === 'Granular' && !t.use).length,
+            warned: g.warnings.some((w) => /pocket penetrometer reading in granular/.test(w)) ? 1 : 0,
+            top: parsePP('4.5+').cu, topLB: parsePP('>4.5').lowerBound ? 1 : 0, kpacu: parsePP('50', 'kPa-cu').cu,
+          } };
+        },
+        expect: { cu_char: { value: 49.03, tol: 0.05 }, n_pp: { value: 3, tol: 0 }, mv_set: { value: 1, tol: 0 }, sand_ignored: { value: 1, tol: 0 }, warned: { value: 1, tol: 0 }, top: { value: 220.65, tol: 0.05 }, topLB: { value: 1, tol: 0 }, kpacu: { value: 50, tol: 1e-9 } },
       },
       {
         name: 'Unit — reaction units: R1 schedule entered in tonnes (values ÷ 9.81) gives the same kN loads',
