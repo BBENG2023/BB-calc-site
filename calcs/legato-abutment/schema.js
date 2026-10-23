@@ -141,7 +141,7 @@ export function newSimpleBorehole(o = {}) {
     id: 'BH1', end: 'End 1', chainage: 0, offset: 0, GL: 100.0, finalDepth: null,
     strike: null, roseTo: null, standing: null, Er: null, simple: true,
     // Pocket penetrometer: reading units and an optional reduction factor on cu.
-    ppUnit: 'kgcm2', ppFactor: 1.0, pp: [],
+    ppUnit: 'kPa-qu', ppFactor: 1.0, pp: [],
     simpleRows: [
       { depth: 0.0, soil: 'Topsoil', N: '', PP: '', note: '' },
       { depth: 1.0, soil: 'Sand', N: '12', PP: '', note: '' },

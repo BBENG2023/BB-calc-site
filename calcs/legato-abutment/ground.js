@@ -107,7 +107,7 @@ export function processBorehole(bh, opts, gwLevel) {
   });
 
   // Pocket penetrometer readings (cohesive strata only): cu = qu/2 × factor.
-  const ppUnit = bh.ppUnit || 'kgcm2';
+  const ppUnit = bh.ppUnit || 'kPa-qu';
   const ppTests = (bh.pp || []).map((t) => {
     const depth = Number(t.depth);
     const r = parsePP(t.result, ppUnit, bh.ppFactor);

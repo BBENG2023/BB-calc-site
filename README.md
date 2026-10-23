@@ -98,6 +98,11 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.6.5** — Legato abutment designer v1.4.5: pocket penetrometer units
+  now default to **kPa** (unconfined strength qu; cu = qu/2). "kPa already
+  given as cu" and kg/cm² remain as options. Readings at the top of the
+  scale (about 441 kPa qu) are lower bounds in every unit.
+
 - **v1.6.4** — Legato abutment designer v1.4.4: **pocket penetrometer (PP)
   input**.
   - **Entry:** borehole rows take a PP reading as well as, or instead of,

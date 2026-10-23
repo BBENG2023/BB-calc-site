@@ -1274,7 +1274,7 @@ function boreholeCard(state, bh, bi, end, onChange) {
     { path: 'chainage', label: 'Chainage (for drawings)', unit: 'm', step: 0.1 },
     { path: 'end', label: 'Use for', type: 'select', options: [['End 1', 'End 1'], ['End 2', 'End 2'], ['Both', 'Both ends']] },
     { path: 'Er', label: 'SPT hammer energy Er (blank = 60%)', unit: '%', step: 1, nullable: true },
-    { path: 'ppUnit', label: 'Pocket penetrometer (PP) units', type: 'select', options: [['kgcm2', 'kg/cm² (instrument scale, qu)'], ['kPa-qu', 'kPa — unconfined strength qu'], ['kPa-cu', 'kPa — already cu']], help: 'PP is for clays and silts only. cu = qu/2. Readings of “4.5+” or “>4.5” are taken as lower bounds.' },
+    { path: 'ppUnit', label: 'Pocket penetrometer (PP) units', type: 'select', options: [['kPa-qu', 'kPa — unconfined strength qu (default)'], ['kPa-cu', 'kPa — already given as cu'], ['kgcm2', 'kg/cm² (older instrument scale, qu)']], help: 'PP is for clays and silts only. cu = qu/2. Readings at the top of the scale (about 440 kPa, or written with “+” or “>”) are taken as lower bounds.' },
     { path: 'ppFactor', label: 'Reduction factor on PP cu (1.0 = none)', step: 0.05, min: 0.3, max: 1, help: 'Optional cautious factor where PP may overstate cu (fissured or stony clay) — justify on the sheet.' },
   ];
   fs.append(fieldset('Borehole', hdr, bh, state, end, (s) => onChange(s), 'lg-plain'));
@@ -1285,7 +1285,7 @@ function boreholeCard(state, bh, bi, end, onChange) {
         { key: 'depth', label: 'Depth', type: 'number', unit: 'm', step: 0.1 },
         { key: 'soil', label: 'Soil', type: 'select', options: SIMPLE_SOILS },
         { key: 'N', label: 'SPT N', type: 'text', width: '6rem', validate: (v) => { if (v === null || v === undefined || String(v).trim() === '') return ''; const r2 = parseSPT(v); return r2.error ? 'Not a readable SPT result' : ''; } },
-        { key: 'PP', label: `PP (${bh.ppUnit === 'kPa-qu' ? 'kPa qu' : bh.ppUnit === 'kPa-cu' ? 'kPa cu' : 'kg/cm²'})`, type: 'text', width: '5rem', validate: (v) => { if (v === null || v === undefined || String(v).trim() === '') return ''; return parsePP(v, bh.ppUnit).error ? 'Not a readable PP value' : ''; } },
+        { key: 'PP', label: `PP (${bh.ppUnit === 'kgcm2' ? 'kg/cm²' : bh.ppUnit === 'kPa-cu' ? 'kPa cu' : 'kPa qu'})`, type: 'text', width: '5rem', validate: (v) => { if (v === null || v === undefined || String(v).trim() === '') return ''; return parsePP(v, bh.ppUnit).error ? 'Not a readable PP value' : ''; } },
         { key: 'note', label: 'Log description (optional)', type: 'text', width: '12rem' },
       ],
       rows: bh.simpleRows, onChange: () => onChange(false), compact: true, allowDuplicate: false,
@@ -1305,7 +1305,7 @@ function boreholeCard(state, bh, bi, end, onChange) {
     bh.pp = bh.pp || [];
     fs.append(h('h4', 'lg-h4', 'Pocket penetrometer results (cohesive strata)'));
     fs.append(createTable({
-      columns: [{ key: 'depth', label: 'Depth', type: 'number', unit: 'm' }, { key: 'result', label: `Reading (${bh.ppUnit === 'kPa-qu' ? 'kPa qu' : bh.ppUnit === 'kPa-cu' ? 'kPa cu' : 'kg/cm²'})`, type: 'text', width: '8rem', validate: (v) => (parsePP(v, bh.ppUnit).error ? 'Not a readable PP value' : '') }],
+      columns: [{ key: 'depth', label: 'Depth', type: 'number', unit: 'm' }, { key: 'result', label: `Reading (${bh.ppUnit === 'kgcm2' ? 'kg/cm²' : bh.ppUnit === 'kPa-cu' ? 'kPa cu' : 'kPa qu'})`, type: 'text', width: '8rem', validate: (v) => (parsePP(v, bh.ppUnit).error ? 'Not a readable PP value' : '') }],
       rows: bh.pp, onChange: () => onChange(false), newRow: () => ({ depth: (bh.pp[bh.pp.length - 1]?.depth ?? 0) + 0.5, result: '' }), compact: true,
     }));
     fs.append(h('h4', 'lg-h4', 'SPT results'));

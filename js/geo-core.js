@@ -331,19 +331,19 @@ export function terzaghiSolver(u0, drainage = 'double', terms = 200) {
 // --- Pocket (hand) penetrometer ----------------------------------------------------
 
 // Pocket penetrometer reading → undrained shear strength cu (kPa).
-// unit: 'kgcm2' (instrument scale, qu in kg/cm²), 'kPa-qu' or 'kPa-cu'.
+// unit: 'kPa-qu' (default, qu in kPa), 'kPa-cu' or 'kgcm2' (qu in kg/cm²).
 // cu = qu/2 × factor. Readings at the top of the scale (e.g. "4.5+" or
 // ">4.5") are lower bounds. Index test only (BS 5930:2015+A1:2020) — check
 // against hand vane or triaxial results before relying on it.
 export const PP_MAX_KGCM2 = 4.5;
-export function parsePP(raw, unit = 'kgcm2', factor = 1) {
+export function parsePP(raw, unit = 'kPa-qu', factor = 1) {
   const s = String(raw ?? '').trim();
   if (!s) return { empty: true };
   const lowerBound = /^>|\+$/.test(s);
   const v = Number(s.replace(/^>\s*/, '').replace(/\+$/, '').replace(',', '.'));
   if (!Number.isFinite(v) || v < 0) return { error: `Not a readable pocket penetrometer value ("${s}")` };
   const qu = unit === 'kPa-qu' ? v : unit === 'kPa-cu' ? 2 * v : v * 98.0665;
-  const atMax = unit === 'kgcm2' && v >= PP_MAX_KGCM2 - 1e-9;
+  const atMax = qu >= PP_MAX_KGCM2 * 98.0665 - 0.5; // top of the instrument scale (≈ 441 kPa qu)
   const f = Number.isFinite(Number(factor)) && Number(factor) > 0 ? Number(factor) : 1;
   return { value: v, qu, cu: (qu / 2) * f, lowerBound: lowerBound || atMax, factor: f };
 }

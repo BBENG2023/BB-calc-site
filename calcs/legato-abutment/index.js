@@ -127,7 +127,7 @@ export default {
   title: 'Bridge Abutment — Legato Interlocking Block (Bank Seat)',
   category: 'Bridge Substructures — Precast Block Abutments',
   tag: 'EC7 DA1 · Legato',
-  version: '1.4.4',
+  version: '1.4.5',
   schemaVersion: SCHEMA_VERSION,
   debounceMs: 250,
   references: [
@@ -469,12 +469,12 @@ export default {
         expect: { courses: { value: 3, tol: 0 }, ballast: { value: 0, tol: 0 }, seatTop: { value: 1, tol: 0 }, I4a: { value: 0, tol: 0 }, bearingU: { value: 0, tol: 1e-9 }, single_courses: { value: 1, tol: 0 }, single_seat: { value: 1, tol: 0 } },
       },
       {
-        name: 'Pocket penetrometer: PP-only clay borehole (kg/cm²) → cu = qu/2 = 49.0, 58.8, 73.5 kPa; characteristic (n < 5, minimum) 49.0 kPa; mv from N60,eq = cu/f1; a PP reading in sand is ignored; "4.5+" is a lower bound (220.6 kPa); kPa-cu units pass straight through',
+        name: 'Pocket penetrometer (default units kPa qu; this case entered in kg/cm²): PP-only clay borehole → cu = qu/2 = 49.0, 58.8, 73.5 kPa; characteristic (n < 5, minimum) 49.0 kPa; mv from N60,eq = cu/f1; a PP reading in sand is ignored; "4.5+" is a lower bound (220.6 kPa); kPa-cu units pass straight through',
         inputs: {},
         run: () => {
           const s = bbStandard();
           s.ends[0].groundMode = 'boreholes';
-          s.boreholes = [newSimpleBorehole({ id: 'BHPP', end: 'End 1', GL: 100.5, Er: 60, simpleRows: [
+          s.boreholes = [newSimpleBorehole({ id: 'BHPP', end: 'End 1', GL: 100.5, Er: 60, ppUnit: 'kgcm2', simpleRows: [
             { depth: 0, soil: 'Topsoil', N: '', PP: '', note: '' },
             { depth: 0.5, soil: 'Sand', N: '', PP: '2.0', note: '' },
             { depth: 1.0, soil: 'Clay/silt', N: '', PP: '', note: '' },
@@ -489,10 +489,10 @@ export default {
             cu_char: clay.cu, n_pp: clay.char.cu.n, mv_set: Number.isFinite(clay.mv) && clay.char.mvNote ? 1 : 0,
             sand_ignored: pb.ppTests.filter((t) => t.cls === 'Granular' && !t.use).length,
             warned: g.warnings.some((w) => /pocket penetrometer reading in granular/.test(w)) ? 1 : 0,
-            top: parsePP('4.5+').cu, topLB: parsePP('>4.5').lowerBound ? 1 : 0, kpacu: parsePP('50', 'kPa-cu').cu,
+            top: parsePP('4.5+', 'kgcm2').cu, topLB: parsePP('>4.5', 'kgcm2').lowerBound ? 1 : 0, kpacu: parsePP('50', 'kPa-cu').cu, kpaDefault: parsePP('120').cu, kpaTop: parsePP('441').lowerBound ? 1 : 0, newBhUnit: newSimpleBorehole().ppUnit === 'kPa-qu' ? 1 : 0,
           } };
         },
-        expect: { cu_char: { value: 49.03, tol: 0.05 }, n_pp: { value: 3, tol: 0 }, mv_set: { value: 1, tol: 0 }, sand_ignored: { value: 1, tol: 0 }, warned: { value: 1, tol: 0 }, top: { value: 220.65, tol: 0.05 }, topLB: { value: 1, tol: 0 }, kpacu: { value: 50, tol: 1e-9 } },
+        expect: { cu_char: { value: 49.03, tol: 0.05 }, n_pp: { value: 3, tol: 0 }, mv_set: { value: 1, tol: 0 }, sand_ignored: { value: 1, tol: 0 }, warned: { value: 1, tol: 0 }, top: { value: 220.65, tol: 0.05 }, topLB: { value: 1, tol: 0 }, kpacu: { value: 50, tol: 1e-9 }, kpaDefault: { value: 60, tol: 1e-9 }, kpaTop: { value: 1, tol: 0 }, newBhUnit: { value: 1, tol: 0 } },
       },
       {
         name: 'Unit — reaction units: R1 schedule entered in tonnes (values ÷ 9.81) gives the same kN loads',
