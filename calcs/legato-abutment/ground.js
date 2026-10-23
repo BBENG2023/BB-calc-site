@@ -119,6 +119,7 @@ export function processBorehole(bh, opts, gwLevel) {
   });
   if (ppTests.some((t) => t.use)) {
     warnings.push(`${bh.id}: cu from pocket penetrometer readings (cu = qu/2${Number(bh.ppFactor) && Number(bh.ppFactor) !== 1 ? ` × ${bh.ppFactor}` : ''}). PP is an index test only (BS 5930:2015+A1:2020) — it can overstate cu in fissured or stony clay. Confirm with hand vane or triaxial results (verify).`);
+    if (ppUnit !== 'kgcm2' && ppTests.some((t) => t.use && t.value > 0 && t.value <= 10)) warnings.push(`${bh.id}: Check units — pocket penetrometer readings of 10 or less look like kg/cm², but the borehole is set to kPa. Change "PP units" to kg/cm² if the log uses the instrument scale.`);
     if (ppTests.some((t) => t.use && t.lowerBound)) warnings.push(`${bh.id}: some PP readings are at or above the top of the scale (${'≥'} 4.5 kg/cm²) — taken as lower bounds.`);
   }
 

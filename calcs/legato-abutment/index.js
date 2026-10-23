@@ -127,7 +127,7 @@ export default {
   title: 'Bridge Abutment — Legato Interlocking Block (Bank Seat)',
   category: 'Bridge Substructures — Precast Block Abutments',
   tag: 'EC7 DA1 · Legato',
-  version: '1.4.5',
+  version: '1.4.6',
   schemaVersion: SCHEMA_VERSION,
   debounceMs: 250,
   references: [

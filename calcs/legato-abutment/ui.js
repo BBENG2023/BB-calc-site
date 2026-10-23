@@ -397,7 +397,7 @@ export function customUI(container, state, api) {
     T.push({ key: 'project', label: '1 Project & bridge', render: (p) => renderProject(p, state, onChange) });
     T.push({ key: 'loads', label: '2 Loads', render: (p) => renderLoads(p, state, onChange, api) });
     T.push({ key: 'crossing', label: bridgeMode(state) ? '3 Crossing & levels' : '3 Levels', render: (p) => renderCrossing(p, state, E(), activeEnd(), onChange, api) });
-    T.push({ key: 'ground', label: '4 Ground', render: (p) => renderGround(p, state, E(), activeEnd(), onChange, api) });
+    T.push({ key: 'ground', label: '4 Ground', render: (p) => renderGround(p, state, E(), activeEnd(), onChange, api, live) });
     T.push({ key: 'arrangement', label: '5 Arrangement', render: (p) => renderArrangement(p, state, E(), activeEnd(), onChange, api) });
     T.push({ key: 'basis', label: '6 Design basis', render: (p) => renderBasis(p, state, E(), onChange) });
     T.push({ key: 'spec', label: '7 Spec & DRA', render: (p) => renderSpec(p, state, onChange, api) });
@@ -577,7 +577,7 @@ function renderQuickGround(p, state, end, idx, onChange, api, live) {
   };
   if (api.getOutput()?.design) live.site(api.getOutput());
   p.append(h('h3', 'lg-h3', 'Boreholes'));
-  renderGround(p, state, end, idx, onChange, api);
+  renderGround(p, state, end, idx, onChange, api, live);
 }
 
 // Step 6 — limits, overrides and what blocks the sheet.
@@ -1190,7 +1190,7 @@ function renderCrossing(p, state, end, idx, onChange, api) {
 
 // --- Tab 4 -----------------------------------------------------------------------------
 
-function renderGround(p, state, end, idx, onChange, api) {
+function renderGround(p, state, end, idx, onChange, api, live = null) {
   const label = bridgeMode(state) ? end.label : 'Wall';
   const endName = `End ${idx + 1}`;
   p.append(h('p', 'field-help lg-lead', `Enter each borehole for ${e(label)} as it appears on the log: the depth, the soil and the SPT N value — or, in clay, the pocket penetrometer (PP) reading where that is all the GI gives. The tool corrects N, derives φ′ or cu, sets characteristic values and builds the design profile.`));
@@ -1209,13 +1209,28 @@ function renderGround(p, state, end, idx, onChange, api) {
   });
   p.append(addB);
 
-  const out = api.getOutput()?.design?.ends?.[idx];
-  if (out) {
-    const fsP = h('fieldset', 'lg-fieldset');
-    fsP.append(h('legend', null, `${label} — design profile used`));
-    fsP.innerHTML += `<div class="tbl-scroll"><table class="tbl-input tbl-readonly"><thead><tr><th>#</th><th>Stratum</th><th>From–to (mAOD)</th><th class="num">γ</th><th class="num">φ′k °</th><th class="num">cu,k kPa</th><th class="num">N60</th><th>Basis</th></tr></thead><tbody>${out.ground.layers.map((l, i) => `<tr><td>${i}</td><td>${e(l.desc || l.cls)}${l.unsuitable ? ' ⚠ unsuitable' : ''}</td><td>${fmt(l.topLevel, 2)} – ${fmt(l.baseLevel, 2)}</td><td class="num">${fmt(l.gamma, 1)}</td><td class="num">${fmt(l.phi, 1)}</td><td class="num">${l.cu ? fmt(l.cu, 0) : '—'}</td><td class="num">${l.N60 !== null && l.N60 !== undefined ? fmt(l.N60, 1) : '—'}</td><td>${e(l.char?.phi?.method || l.char?.cu?.method || l.source || '')}</td></tr>`).join('')}</tbody></table></div><p class="field-help">Design borehole ${e(out.ground.designId || 'manual profile')}; groundwater ${Number.isFinite(out.ground.gw.level) ? `${fmt(out.ground.gw.level, 2)} mAOD` : 'deep'}. Formation ${fmt(out.levels.formation, 2)} mAOD on ${e(out.geom.founding.desc || out.geom.founding.cls)}.</p>`;
-    p.append(fsP);
-  }
+  // Design profile used — refreshed after every recalculation so the effect
+  // of an SPT or PP entry shows straight away.
+  const fsP = h('fieldset', 'lg-fieldset');
+  fsP.append(h('legend', null, `${label} — design profile used`));
+  const prof = h('div');
+  fsP.append(prof);
+  p.append(fsP);
+  const drawProfile = (o) => {
+    const out = o?.design?.ends?.find((x) => x.endIdx === idx);
+    if (!out) { prof.innerHTML = '<p class="muted">Calculating…</p>'; return; }
+    const g1 = out.checks.E1.governing;
+    const basis = (l) => {
+      const c = l.char?.cu || l.char?.phi;
+      if (!c) return e(l.source || '');
+      return `${e(c.method)} of ${c.n}${c.sources ? ` (${e(c.sources)})` : ''}`;
+    };
+    prof.innerHTML = `<div class="tbl-scroll"><table class="tbl-input tbl-readonly"><thead><tr><th>#</th><th>Stratum</th><th>From–to (mAOD)</th><th class="num">γ</th><th class="num">φ′k °</th><th class="num">cu,k kPa</th><th class="num">N60</th><th>Basis</th></tr></thead><tbody>${out.ground.layers.map((l, i) => `<tr${l === out.geom.founding ? ' class="lg-founding"' : ''}><td>${i}</td><td>${e(l.desc || l.cls)}${l.unsuitable ? ' ⚠ unsuitable' : ''}${l === out.geom.founding ? ' <strong>← founding</strong>' : ''}</td><td>${fmt(l.topLevel, 2)} – ${fmt(l.baseLevel, 2)}</td><td class="num">${fmt(l.gamma, 1)}</td><td class="num">${fmt(l.phi, 1)}</td><td class="num">${l.cu ? fmt(l.cu, 0) : '—'}</td><td class="num">${l.N60 !== null && l.N60 !== undefined ? fmt(l.N60, 1) : '—'}</td><td>${basis(l)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="field-help">Design borehole ${e(out.ground.designId || 'manual profile')}; groundwater ${Number.isFinite(out.ground.gw.level) ? `${fmt(out.ground.gw.level, 2)} mAOD` : 'deep'}. Formation ${fmt(out.levels.formation, 2)} mAOD on ${e(out.geom.founding.desc || out.geom.founding.cls)}.</p>
+      ${g1 ? `<p class="lg-readout">Bearing (E1) ${fmt(out.checks.E1.util, 2)} — ${e(g1.mode === 'undrained' ? 'undrained (cu) governs' : g1.mode === 'drained' ? (out.geom.founding.cls === 'Cohesive' ? 'drained (φ′) governs, so cu only changes the result once it falls below the drained value' : 'drained (φ′) governs — founding soil is granular, so PP readings in clay elsewhere do not change it') : g1.mode || '')}.</p>` : ''}`;
+  };
+  drawProfile(api.getOutput());
+  if (live) { const prev = live.ground; live.ground = (o) => { if (prev) prev(o); drawProfile(o); }; }
 
   // Advanced options, collapsed.
   const adv = h('details', 'lg-more');
@@ -1279,6 +1294,19 @@ function boreholeCard(state, bh, bi, end, onChange) {
   ];
   fs.append(fieldset('Borehole', hdr, bh, state, end, (s) => onChange(s), 'lg-plain'));
   if (bh.simple) {
+    // Live note beside each PP reading: the cu taken, or why it is ignored.
+    var updPP = () => fs.querySelectorAll('.lg-kn').forEach((sp) => {
+      const r = sp.lgRow;
+      const raw = r?.PP;
+      sp.className = 'lg-kn';
+      if (raw === null || raw === undefined || String(raw).trim() === '') { sp.textContent = ''; return; }
+      const x = parsePP(raw, bh.ppUnit, bh.ppFactor);
+      if (x.error) { sp.textContent = 'not readable'; sp.classList.add('lg-kn-warn'); return; }
+      if (r.soil !== 'Clay/silt') { sp.textContent = `ignored — soil is ${r.soil}; set Clay/silt`; sp.classList.add('lg-kn-warn'); return; }
+      const tiny = bh.ppUnit !== 'kgcm2' && x.value > 0 && x.value <= 10;
+      sp.textContent = `cu ${Math.round(x.cu)} kPa${x.lowerBound ? ' (≥)' : ''}${tiny ? ' — looks like kg/cm²: check units' : ''}`;
+      if (tiny) sp.classList.add('lg-kn-warn');
+    });
     fs.append(h('p', 'field-help', 'One row per log entry: depth below ground, the soil as logged, and the SPT N as written (e.g. 15, or 50/75 for a refusal) and/or the pocket penetrometer (PP) reading in clay. Use either where the GI gives only one. A row with neither marks the top of a new soil. Paste straight from a spreadsheet.'));
     fs.append(createTable({
       columns: [
@@ -1286,11 +1314,13 @@ function boreholeCard(state, bh, bi, end, onChange) {
         { key: 'soil', label: 'Soil', type: 'select', options: SIMPLE_SOILS },
         { key: 'N', label: 'SPT N', type: 'text', width: '6rem', validate: (v) => { if (v === null || v === undefined || String(v).trim() === '') return ''; const r2 = parseSPT(v); return r2.error ? 'Not a readable SPT result' : ''; } },
         { key: 'PP', label: `PP (${bh.ppUnit === 'kgcm2' ? 'kg/cm²' : bh.ppUnit === 'kPa-cu' ? 'kPa cu' : 'kPa qu'})`, type: 'text', width: '5rem', validate: (v) => { if (v === null || v === undefined || String(v).trim() === '') return ''; return parsePP(v, bh.ppUnit).error ? 'Not a readable PP value' : ''; } },
+        { key: 'ppUsed', label: 'PP used', render: (row) => { const sp = h('span', 'lg-kn'); sp.lgRow = row; return sp; } },
         { key: 'note', label: 'Log description (optional)', type: 'text', width: '12rem' },
       ],
-      rows: bh.simpleRows, onChange: () => onChange(false), compact: true, allowDuplicate: false,
+      rows: bh.simpleRows, onChange: () => { updPP(); onChange(false); }, compact: true, allowDuplicate: false,
       newRow: () => { const last = bh.simpleRows[bh.simpleRows.length - 1]; return { depth: last ? Number(last.depth) + 1 : 0, soil: last ? last.soil : 'Sand', N: '', PP: '', note: '' }; },
     }));
+    updPP();
   } else {
     bh.strata.forEach((s) => { s.lab = s.lab || {}; });
     fs.append(h('h4', 'lg-h4', 'Strata (detailed entry)'));

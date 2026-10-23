@@ -98,6 +98,15 @@ this repo has a remote to file them against.
 
 ## Changelog
 
+- **v1.6.6** — Legato abutment designer v1.4.6: pocket penetrometer
+  feedback.
+  - The Ground step's design-profile table updates live. It marks the
+    founding stratum, shows how many SPT and PP results each value came
+    from, and says whether drained or undrained bearing governs.
+  - A "PP used" column beside each reading shows the cu taken. It also flags
+    a reading that is ignored (soil not Clay/silt) or that looks like kg/cm²
+    while the units are set to kPa.
+
 - **v1.6.5** — Legato abutment designer v1.4.5: pocket penetrometer units
   now default to **kPa** (unconfined strength qu; cu = qu/2). "kPa already
   given as cu" and kg/cm² remain as options. Readings at the top of the
